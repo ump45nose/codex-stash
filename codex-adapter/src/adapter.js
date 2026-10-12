@@ -18,6 +18,10 @@ export const NATIVE_MENU_CHROME = {
   separatorClass: '',
 }
 
+/** Native compact tooltip classes (captured live from 归档聊天). Presentation only. */
+export const NATIVE_TOOLTIP_CLASS =
+  'w-fit text-sm whitespace-normal break-words min-h-min select-none z-50 _textTheme_8iuk0_2 text-center rounded-2xl border border-(color:--color-border-tooltip) bg-(--color-background-tooltip) text-(color:--color-text-tooltip) leading-4.5 font-(weight:--tooltip-compact-font-weight) tracking-(--tracking-tooltip) shadow-(--shadow-tooltip) px-3 py-1.25 pointer-events-none'
+
 export function createAdapter(doc, options = {}) {
   const table = options.selectorTable ?? SELECTOR_TABLE
   const ignoreIdPrefix = options.ignoreIdPrefix ?? null
@@ -290,18 +294,94 @@ export function createAdapter(doc, options = {}) {
     return { className: button.className, attrs, innerClass: button.firstElementChild?.tagName === 'SPAN' ? button.firstElementChild.className : '' }
   }
 
-  /** Native row hover-action container (holds pin / archive pills). */
+  function nativePills(row) {
+    return [...row.querySelectorAll(table.rowHoverActions)].filter((node) => !isOurNode(node))
+  }
+
+  /**
+   * Native row hover group (the element matching `[class*=group-hover:opacity-100]`
+   * that holds pin / archive). Each pill sits inside a Radix tooltip trigger
+   * span; we return the group plus the first direct child to insert before.
+   */
   function rowActionContainer(row) {
-    const pill = row.querySelector(table.rowHoverActions)
-    return pill?.parentElement ?? null
+    const pill = nativePills(row)[0]
+    if (!pill) return null
+    const group = pill.closest(table.rowHoverGroup)
+    if (!group || !row.contains(group)) return null
+    let first = pill
+    while (first.parentElement && first.parentElement !== group) first = first.parentElement
+    return { group, before: first }
   }
 
   function firstRowPill() {
     for (const row of threadNodes()) {
-      const pill = row.querySelector(table.rowHoverActions)
+      const pill = nativePills(row)[0]
       if (pill) return pill
     }
     return null
+  }
+
+  /** The row's native pin/unpin pill: labelled 置顶/pin, else the first pill. */
+  function pinPill(row) {
+    const pills = nativePills(row)
+    return pills.find((p) => /置顶|pin/i.test(p.getAttribute('aria-label') || '')) ?? pills[0] ?? null
+  }
+
+  function rowsFor(threadId) {
+    const key = domThreadKey(threadId)
+    if (!key) return []
+    return threadNodes().filter((node) => domThreadKey(node.getAttribute(table.threadIdAttr)) === key)
+  }
+
+  /** true / false when a row is rendered, null when unknown. */
+  function isPinned(threadId) {
+    const rows = rowsFor(threadId)
+    if (!rows.length) return null
+    return rows.some((row) => row.getAttribute(table.threadPinnedAttr) === 'true')
+  }
+
+  async function waitFor(check, waitMs, step) {
+    for (let waited = 0; waited <= waitMs; waited += step) {
+      const value = check()
+      if (value) return value
+      await sleep(step)
+    }
+    return check()
+  }
+
+  /**
+   * Unpin through Codex's own pin pill for that row, by thread id. Expands
+   * the collapsed Pinned section temporarily if the row is not rendered, and
+   * confirms by waiting until no row for the id reports pinned="true".
+   * @returns {Promise<{ ok: boolean, wasPinned: boolean | null, reason?: string }>}
+   */
+  async function unpinThread(threadId, { waitMs = 1500, step = 50 } = {}) {
+    let restore = null
+    let pinned = isPinned(threadId)
+    if (pinned === null) {
+      const pinnedSection = nativeSections().find((s) => sectionKey(s) === 'pinned')
+      const toggle = pinnedSection?.querySelector(table.sectionToggle)
+      if (toggle && toggle.getAttribute('aria-expanded') === 'false') {
+        toggle.click()
+        restore = pinnedSection
+        await waitFor(() => rowsFor(threadId).length > 0, 600, step)
+      }
+      pinned = isPinned(threadId)
+    }
+    try {
+      if (!pinned) return { ok: true, wasPinned: pinned }
+      const row = rowsFor(threadId).find((r) => r.getAttribute(table.threadPinnedAttr) === 'true')
+      const pill = row && pinPill(row)
+      if (!pill) return { ok: false, wasPinned: true, reason: 'no-pin-control' }
+      pill.click()
+      const done = await waitFor(() => isPinned(threadId) !== true, waitMs, step)
+      return done ? { ok: true, wasPinned: true } : { ok: false, wasPinned: true, reason: 'still-pinned' }
+    } finally {
+      if (restore?.isConnected) {
+        const toggle = restore.querySelector(table.sectionToggle)
+        if (toggle?.getAttribute('aria-expanded') === 'true') toggle.click()
+      }
+    }
   }
 
   /** Rendered native rows that can host a 收纳 hover button. */
@@ -310,11 +390,11 @@ export function createAdapter(doc, options = {}) {
     for (const row of threadNodes()) {
       const key = domThreadKey(row.getAttribute(table.threadIdAttr))
       if (!key) continue
-      const container = rowActionContainer(row)
-      const pill = container?.querySelector(table.rowHoverActions)
-      if (!container || !pill) continue
+      const place = rowActionContainer(row)
+      const pill = place && nativePills(row)[0]
+      if (!place || !pill) continue
       const donor = donorButton(pill)
-      slots.push({ threadId: key, container, buttonClass: donor.className, buttonAttrs: donor.attrs, innerClass: donor.innerClass })
+      slots.push({ threadId: key, container: place.group, before: place.before, buttonClass: donor.className, buttonAttrs: donor.attrs, innerClass: donor.innerClass })
     }
     return slots
   }
@@ -513,6 +593,9 @@ export function createAdapter(doc, options = {}) {
     threadIdFromNode,
     uiZoom,
     menuChrome: () => NATIVE_MENU_CHROME,
+    tooltipClass: () => NATIVE_TOOLTIP_CLASS,
+    isPinned,
+    unpinThread,
     mountPoint,
     onUserMessage,
     observe,

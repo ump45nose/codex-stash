@@ -300,40 +300,81 @@ test('a hotkey the host already handled is skipped and warned once', () => {
   uninstall({ window })
 })
 
-function addNativeRow(window, id, title) {
+function addNativeRow(window, id, title, { pinned = false } = {}) {
   const scroll = window.document.querySelector('[data-app-action-sidebar-scroll]')
+  // Mirrors live DOM: each pill sits in a Radix tooltip trigger span.
   scroll.insertAdjacentHTML(
     'beforeend',
     `<div class="group native-row" data-app-action-sidebar-thread-row data-app-action-sidebar-thread-id="local:${id}"
-       data-app-action-sidebar-thread-title="${title}" role="button">${title}
+       data-app-action-sidebar-thread-pinned="${pinned}" data-app-action-sidebar-thread-title="${title}" role="button">${title}
        <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100">
-         <button type="button" class="pill" data-pill="" data-size="3xs" aria-label="置顶聊天">pin</button>
-         <button type="button" class="pill" data-pill="" data-size="3xs" aria-label="归档聊天">archive</button>
+         <span data-state="closed" class="contents"><button type="button" class="pill" data-pill="" data-size="3xs" aria-label="${pinned ? '取消置顶聊天' : '置顶聊天'}"><span class="inner"><svg class="pin-icon"></svg></span></button></span>
+         <span data-state="closed" class="contents"><button type="button" class="pill" data-pill="" data-size="3xs" aria-label="归档聊天">archive</button></span>
        </div></div>`,
   )
-  return scroll.lastElementChild
+  const row = scroll.lastElementChild
+  row.querySelector('[aria-label$="置顶聊天"]').addEventListener('click', (event) => {
+    event.stopPropagation()
+    const next = row.getAttribute('data-app-action-sidebar-thread-pinned') !== 'true'
+    setTimeout(() => row.setAttribute('data-app-action-sidebar-thread-pinned', String(next)), 5)
+  })
+  return row
 }
 
-test('native rows get a 收纳 hover button that stashes that row by id, with the shortcut hint', () => {
+test('native rows get a 收纳聊天 button outside the native tooltip trigger, own icon and tooltip', () => {
   const { window } = page()
   const row = addNativeRow(window, OTHER, 'Other thread')
   let navigated = 0
   row.addEventListener('click', () => (navigated += 1))
   install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} } })
   const button = row.querySelector('[id^="codex-stash-v1-act-"]')
-  assert.ok(button, 'stash button injected into the native hover group')
+  assert.ok(button, 'stash button injected')
+  const group = row.querySelector('.group-hover\\:opacity-100')
+  assert.equal(button.parentElement, group, 'direct child of the hover group, not inside a tooltip span')
+  assert.equal(button.closest('[data-state]'), null)
   assert.equal(button.className, 'pill')
-  assert.equal(button.getAttribute('data-pill'), '')
-  assert.match(button.getAttribute('aria-label'), /收纳 \(⇧⌘H\)/)
-  button.click()
-  assert.equal(navigated, 0, 'clicking the action does not open the row')
-  const pop = window.document.getElementById('codex-stash-v1-popover')
-  assert.match(pop.textContent, /^收纳会话 \(⇧⌘H\)Other thread/)
-  pop.querySelector('[data-preset="tomorrow"]').click()
-  const stashed = [...window.document.querySelectorAll('.codex-stash-v1-row')].map((r) => r.getAttribute('data-codex-stash-thread-id'))
-  assert.deepEqual(stashed, [OTHER])
+  assert.equal(button.getAttribute('aria-label'), '收纳聊天')
+  assert.equal(button.hasAttribute('title'), false)
+  assert.ok(button.querySelector('svg.codex-stash-v1-icon'))
+  assert.equal(button.querySelector('.pin-icon'), null)
+  button.dispatchEvent(new window.MouseEvent('focus'))
+  button.focus()
+  return new Promise((resolve) => setTimeout(resolve, 350)).then(() => {
+    const tip = window.document.getElementById('codex-stash-v1-tooltip')
+    assert.ok(tip)
+    assert.equal(tip.textContent, '收纳聊天⇧⌘H')
+    button.click()
+    assert.equal(navigated, 0, 'clicking the action does not open the row')
+    const pop = window.document.getElementById('codex-stash-v1-popover')
+    assert.match(pop.textContent, /^收纳聊天 \(⇧⌘H\)Other thread/)
+    pop.querySelector('[data-preset="tomorrow"]').click()
+    const stashed = [...window.document.querySelectorAll('.codex-stash-v1-row')].map((r) => r.getAttribute('data-codex-stash-thread-id'))
+    assert.deepEqual(stashed, [OTHER])
+    uninstall({ window })
+    assert.equal(window.document.querySelector('[id^="codex-stash-v1-"]'), null)
+  })
+})
+
+test('stashing a pinned chat unpins it through the native pin control and confirms', async () => {
+  const { window } = page()
+  const pinned = addNativeRow(window, OTHER, 'Pinned thread', { pinned: true })
+  const other = addNativeRow(window, '33333333-3333-3333-3333-333333333333', 'Untouched', { pinned: true })
+  let archived = 0
+  pinned.querySelector('[aria-label="归档聊天"]').addEventListener('click', () => (archived += 1))
+  install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} } })
+  pinned.querySelector('[id^="codex-stash-v1-act-"]').click()
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  assert.equal(pinned.getAttribute('data-app-action-sidebar-thread-pinned'), 'false')
+  assert.equal(other.getAttribute('data-app-action-sidebar-thread-pinned'), 'true')
+  assert.equal(archived, 0)
+  assert.deepEqual(window[GUARD].lastUnpin, { threadId: OTHER, ok: true, wasPinned: true })
+  // An unpinned chat is left alone.
+  pressStash(window)
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(window[GUARD].lastUnpin.wasPinned, false)
   uninstall({ window })
-  assert.equal(window.document.querySelector('[id^="codex-stash-v1-"]'), null)
 })
 
 test('the hotkey targets a hovered native row, otherwise the open conversation', () => {
@@ -352,24 +393,43 @@ test('the hotkey targets a hovered native row, otherwise the open conversation',
   uninstall({ window })
 })
 
-test('section header "..." opens a menu; collapse is applied in place for animation', () => {
+test('section header "..." is a sort menu like native 置顶; choice is checked, persisted and applied', () => {
+  const { window } = page()
+  addNativeRow(window, OTHER, 'Alpha')
+  install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} }, now: () => new Date(2026, 9, 12, 15) })
+  pressStash(window)
+  window.document.querySelector('[data-preset="nextMonday"]').click()
+  window.document.querySelector(`[id="codex-stash-v1-act-${OTHER}"]`).click()
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  const order = () => [...window.document.querySelectorAll('.codex-stash-v1-title')].map((b) => b.textContent)
+  assert.deepEqual(order(), ['Alpha', 'Current title'])
+  window.document.getElementById('codex-stash-v1-section-more').click()
+  const items = [...window.document.querySelectorAll('#codex-stash-v1-menu [role=menuitemradio]')]
+  assert.deepEqual(items.map((i) => i.textContent), ['按到期日期', '按收纳时间', '按标题'])
+  assert.deepEqual(items.map((i) => i.getAttribute('aria-checked')), ['true', 'false', 'false'])
+  assert.ok(items[0].querySelector('svg'), 'checkmark on the current mode')
+  assert.equal(window.document.querySelector('#codex-stash-v1-menu').textContent.includes('收纳当前会话'), false)
+  items[1].click()
+  assert.deepEqual(order(), ['Alpha', 'Current title'])
+  window.document.getElementById('codex-stash-v1-section-more').click()
+  window.document.querySelector('[data-action="sort-title"]').click()
+  assert.equal(window.localStorage.getItem('codex-stash:v1:sort'), 'title')
+  assert.equal(window[GUARD].sortMode, 'title')
+  uninstall({ window })
+})
+
+test('collapse is applied in place for animation; row "..." opens 改日期/移出', () => {
   const { window } = page()
   install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} } })
   pressStash(window)
   window.document.querySelector('[data-preset="tomorrow"]').click()
   const section = window.document.getElementById('codex-stash-v1-section')
   const wrap = window.document.getElementById('codex-stash-v1-rows-wrap')
-  window.document.getElementById('codex-stash-v1-section-more').click()
-  const menu = window.document.getElementById('codex-stash-v1-menu')
-  const items = [...menu.querySelectorAll('[role=menuitem]')]
-  assert.match(items[0].textContent, /收纳当前会话.*⇧⌘H/)
-  items[1].click()
+  window.document.getElementById('codex-stash-v1-toggle').click()
   assert.equal(window.document.getElementById('codex-stash-v1-section'), section, 'same node, not rebuilt')
-  assert.equal(window.document.getElementById('codex-stash-v1-rows-wrap'), wrap)
   assert.equal(wrap.getAttribute('data-collapsed'), 'true')
   window.document.getElementById('codex-stash-v1-toggle').click()
   assert.equal(wrap.getAttribute('data-collapsed'), 'false')
-  // Row "..." opens the same menu as right-click.
   window.document.querySelector('.codex-stash-v1-row-more').click()
   const labels = [...window.document.querySelectorAll('#codex-stash-v1-menu [role=menuitem]')].map((i) => i.textContent)
   assert.deepEqual(labels, ['改日期', '移出'])

@@ -3,3 +3,4 @@ export { PRESETS, dueAtFromPreset, dueAtFromDateInput, normalizeDueAt } from './
 export { SCHEMA_VERSION, emptyState, parseState, stateTime, chooseNewer } from './state.js'
 export { createMemoryStorage, createLocalStorageStorage } from './storage.js'
 export { createStashStore } from './store.js'
+export { SORT_MODES, sortRows, normalizeSortMode } from './sort.js'

@@ -1,4 +1,5 @@
 import { placeFloating } from './floating.js'
+import { CHECK_ICON, svgFrom } from './icons.js'
 import { ensureStyle } from './style.js'
 import { NODE_PREFIX } from './strings.js'
 
@@ -21,9 +22,10 @@ function frame(doc, prefix, id, role, chrome, label) {
   return node
 }
 
-function item(doc, chrome, label, shortcut, run) {
+function item(doc, chrome, label, shortcut, run, checked) {
   const el = doc.createElement('div')
-  el.setAttribute('role', 'menuitem')
+  el.setAttribute('role', checked === undefined || checked === null ? 'menuitem' : 'menuitemradio')
+  if (checked !== undefined && checked !== null) el.setAttribute('aria-checked', String(Boolean(checked)))
   el.tabIndex = -1
   el.className = `${chrome?.itemClass || ''} codex-stash-v1-item`.trim()
   const row = doc.createElement('div')
@@ -37,6 +39,11 @@ function item(doc, chrome, label, shortcut, run) {
     kbd.className = 'codex-stash-v1-kbd'
     kbd.textContent = shortcut
     row.append(kbd)
+  }
+  if (checked) {
+    const check = svgFrom(doc, CHECK_ICON)
+    check.setAttribute('class', 'icon-xs shrink-0 opacity-75 codex-stash-v1-check')
+    row.append(check)
   }
   el.append(row)
   el.addEventListener('mouseenter', () => el.setAttribute('data-highlighted', ''))
@@ -127,7 +134,7 @@ export function mountPopover(options) {
   }
   ;(doc.body || doc.documentElement).append(pop)
   placeFloating(pop, { anchor: anchorOf(options), zoom: options.zoom })
-  pop.querySelector('[role=menuitem]')?.focus?.()
+  pop.querySelector('[role^=menuitem]')?.focus?.()
   return attachDismiss(doc, pop, options.onClose)
 }
 
@@ -137,7 +144,7 @@ export function mountPopover(options) {
  * @param {{
  *   doc: Document,
  *   strings: Record<string, string>,
- *   items?: Array<{ label: string, shortcut?: string | null, run: () => void, id?: string }>,
+ *   items?: Array<{ label: string, shortcut?: string | null, run: () => void, id?: string, checked?: boolean }>,
  *   anchor?: Anchor | null,
  *   left?: number,
  *   top?: number,
@@ -158,7 +165,7 @@ export function mountMenu(options) {
     { id: 'remove', label: strings.remove, run: () => options.onRemove?.() },
   ]
   for (const entry of items) {
-    const el = item(doc, chrome, entry.label, entry.shortcut ?? null, entry.run)
+    const el = item(doc, chrome, entry.label, entry.shortcut ?? null, entry.run, entry.checked)
     if (entry.id) el.dataset.action = entry.id
     menu.append(el)
   }
@@ -198,7 +205,7 @@ function attachDismiss(doc, node, onClose) {
       return
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      const items = [...node.querySelectorAll('[role=menuitem]')]
+      const items = [...node.querySelectorAll('[role^=menuitem]')]
       if (!items.length) return
       event.preventDefault()
       const at = items.indexOf(doc.activeElement)

@@ -7,6 +7,8 @@ import {
   createStashStore,
   dueAtFromDateInput,
   dueAtFromPreset,
+  normalizeSortMode,
+  sortRows,
   parseState,
 } from '../../stash-core/src/index.js'
 import {
@@ -28,6 +30,7 @@ export { GUARD, VERSION }
 
 export const DEFAULT_HOTKEY = 'Mod+Shift+H'
 const COLLAPSED_KEY = 'codex-stash:v1:collapsed'
+const SORT_KEY = 'codex-stash:v1:sort'
 
 /**
  * Install the stash section into a Codex renderer document.
@@ -100,6 +103,8 @@ export function install(options = {}) {
   /** @type {Set<string>} */
   let notified = new Set()
   let collapsed = readCollapsed(win)
+  let sortMode = readSort(win)
+  let lastUnpin = null
   /** @type {{ close: () => void } | null} */
   let popover = null
   /** @type {{ close: () => void } | null} */
@@ -133,7 +138,7 @@ export function install(options = {}) {
   }
 
   function viewRows(now) {
-    return store.list(now).map((item) => {
+    return sortRows(store.list(now), sortMode, now).map((item) => {
       const live = adapter.getThreadTitle(item.threadId)
       if (live && live !== item.title) store.refreshTitle(item.threadId, live, now)
       return {
@@ -217,7 +222,10 @@ export function install(options = {}) {
         doc,
         prefix: NODE_PREFIX,
         slots: adapter.rowActionSlots(),
-        label: `${strings.stash} (${shortcut})`,
+        label: strings.stashThis,
+        shortcut,
+        tooltipClass: adapter.tooltipClass?.() ?? '',
+        zoom: () => adapter.uiZoom?.() ?? 1,
         onStash(threadId, rect) {
           openStashPopover(null, { threadId, anchor: rect })
         },
@@ -236,6 +244,7 @@ export function install(options = {}) {
         store.get(threadId)?.title ||
         strings.untitled
       store.stash(threadId, title, dueAt, now)
+      unpinAfterStash(threadId)
     }
     persistMirror()
     closeTransient()
@@ -253,6 +262,21 @@ export function install(options = {}) {
    * @param {string | null} editThreadId
    * @param {{ threadId?: string, anchor?: any }} [target] a specific native row
    */
+  /** Stashing a pinned chat unpins it through Codex's own pin control. */
+  function unpinAfterStash(threadId) {
+    if (typeof adapter.unpinThread !== 'function') return
+    lastUnpin = { threadId, pending: true }
+    Promise.resolve(adapter.unpinThread(threadId))
+      .then((result) => {
+        lastUnpin = { threadId, ...result }
+        if (!result?.ok) log?.warn?.('[codex-stash] unpin failed', threadId, result?.reason)
+        else if (result.wasPinned) log?.info?.('[codex-stash] unpinned', threadId)
+      })
+      .catch((error) => {
+        lastUnpin = { threadId, ok: false, reason: String(error) }
+      })
+  }
+
   function openStashPopover(editThreadId, target = {}) {
     closeTransient()
     const health = adapter.probe()
@@ -307,19 +331,22 @@ export function install(options = {}) {
       strings,
       anchor,
       ...floatingContext(),
+      // Mirrors the native 置顶 header menu: sort radios with a checkmark.
       items: [
-        { id: 'stash-current', label: strings.stashCurrent, shortcut, run: () => openStashPopover(null, { anchor }) },
-        {
-          id: 'toggle',
-          label: collapsed ? strings.expandAll : strings.collapseAll,
-          run() {
-            closeTransient()
-            collapsed = !collapsed
-            writeCollapsed(win, collapsed)
-            render()
-          },
+        ['due', strings.sortDue],
+        ['stashed', strings.sortStashed],
+        ['title', strings.sortTitle],
+      ].map(([mode, label]) => ({
+        id: `sort-${mode}`,
+        label,
+        checked: sortMode === mode,
+        run() {
+          closeTransient()
+          sortMode = mode
+          writeSort(win, mode)
+          render()
         },
-      ],
+      })),
       onClose() {
         menu = null
       },
@@ -443,6 +470,12 @@ export function install(options = {}) {
     get disabled() {
       return disabled
     },
+    get lastUnpin() {
+      return lastUnpin
+    },
+    get sortMode() {
+      return sortMode
+    },
   }
   win[GUARD] = api
   render()
@@ -478,6 +511,20 @@ function createPageStorage(win) {
   return local ? createLocalStorageStorage(local) : createMemoryStorage()
 }
 
+function readSort(win) {
+  try {
+    return normalizeSortMode(pageLocalStorage(win)?.getItem(SORT_KEY))
+  } catch {
+    return 'due'
+  }
+}
+function writeSort(win, mode) {
+  try {
+    pageLocalStorage(win)?.setItem(SORT_KEY, mode)
+  } catch {
+    /* private mode */
+  }
+}
 function readCollapsed(win) {
   try {
     return pageLocalStorage(win)?.getItem(COLLAPSED_KEY) === '1'

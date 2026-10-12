@@ -36,6 +36,9 @@ export function ensureStyle(doc, prefix = NODE_PREFIX) {
     :where(.codex-stash-v1-item) { display: flex; padding: 6px 8px; border-radius: 12px; cursor: pointer; outline: none; }
     .codex-stash-v1-item[data-highlighted], .codex-stash-v1-item:focus-visible { background: var(--color-background-primary-ghost-hover, rgba(0, 0, 0, 0.05)); }
     :where(.codex-stash-v1-item-row) { display: flex; width: 100%; align-items: center; gap: 6px; }
+    :where(.codex-stash-v1-tooltip) { position: fixed; z-index: 1001; pointer-events: none; padding: 5px 12px; border-radius: 16px; font-size: 13px; background: var(--color-background-tooltip, #38342e); color: var(--color-text-tooltip, #fff); white-space: nowrap; }
+    .codex-stash-v1-tooltip { position: fixed; pointer-events: none; }
+    .codex-stash-v1-tooltip-kbd { opacity: 0.6; }
     .codex-stash-v1-kbd { margin-inline-start: auto; padding-inline-start: 16px; font: inherit; opacity: 0.5; font-size: 0.9em; }
     .codex-stash-v1-label { padding: 6px 8px 2px; font-size: 0.85em; opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
     .codex-stash-v1-subject { opacity: 0.9; padding-top: 0; }

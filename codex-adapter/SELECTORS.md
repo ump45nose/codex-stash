@@ -74,7 +74,8 @@ Our own section never sets `data-app-action-sidebar-section`, so Codex's React t
 | Active row | `[data-app-action-sidebar-thread-active="true"]` |
 | Selected row (attr) | `[data-app-action-sidebar-thread-selected="true"]` |
 | Title | `data-app-action-sidebar-thread-title` |
-| Row hover pill (pin / archive), host for the 收纳 button | `[class*="group-hover:opacity-100"] button[data-pill]` |
+| Row hover group (收纳 button is inserted as its direct child, outside the pills' Radix tooltip-trigger spans) | `[class*="group-hover:opacity-100"]` |
+| Row hover pill (pin / archive); the pin pill is labelled 置顶/取消置顶 (falls back to the first pill) | `[class*="group-hover:opacity-100"] button[data-pill]` |
 | Current row | `[aria-current="page"]` |
 | Selected row | `[aria-selected="true"]` |
 | Pin state, read-only | `data-app-action-sidebar-thread-pinned` |
@@ -151,3 +152,9 @@ A CodexHost build that drops `data-app-action-sidebar-thread-id` without a repla
 - **Dropdown menu chrome** (Radix, opened from a header "..."): `NATIVE_MENU_CHROME` in `src/adapter.js` keeps the content/item/row class strings. Unknown classes fall back to zero-specificity `:where()` styles.
 - **Zoom.** The page surface `._PageSurface…` carries `zoom: 1.5` (UI scale). Floating nodes are appended to `body`, so `uiZoom()` multiplies computed `zoom` up from the sidebar and the popover applies the same zoom, dividing `left/top` by it.
 - **Hotkeys.** Codex's keybinding registry in `app.asar` maps `CmdOrCtrl+Shift+S` to `toggleSidebar`. ⌘⌥S, ⌘⇧B and ⌘⇧U are also handled before us. `CmdOrCtrl+Shift+H` is not in the registry.
+
+## Pin state and unpin (live, 2026-10-12)
+
+- `data-app-action-sidebar-thread-pinned="true"` on pinned rows. Stashing calls `unpinThread(id)`, which clicks that row's native pin pill (`取消置顶聊天`). If 置顶 is collapsed it expands it first and collapses it again afterwards. It then waits until no row for the id reports `pinned="true"`.
+- Each pill is wrapped in a Radix tooltip trigger `<span data-state class="contents">`. Anything placed inside that span shows the pill's tooltip, so the 收纳 button sits outside it with its own tooltip (`NATIVE_TOOLTIP_CLASS`).
+- Native section "..." menus: 置顶 offers radio items 最近更新 / 手动排序. 项目 and 最近 have 整理侧边栏 and a 聊天排序方式 submenu. The stash header mirrors 置顶 with radio items 按到期日期 / 按收纳时间 / 按标题.

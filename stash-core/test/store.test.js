@@ -94,3 +94,18 @@ test('callers cannot mutate internal rows', () => {
   row.title = 'tampered'
   assert.equal(store.get(UUID)?.title, 'A')
 })
+
+test('sortRows orders by due date, stash time, or title', async () => {
+  const { sortRows, normalizeSortMode } = await import('../src/sort.js')
+  const now = new Date('2026-10-12T12:00:00Z')
+  const rows = [
+    { title: 'b', dueAt: '2026-10-20T01:00:00Z', stashedAt: '2026-10-01T00:00:00Z' },
+    { title: 'a', dueAt: '2026-10-14T01:00:00Z', stashedAt: '2026-10-03T00:00:00Z' },
+    { title: 'c', dueAt: '2026-10-11T01:00:00Z', stashedAt: '2026-10-02T00:00:00Z' },
+  ]
+  assert.deepEqual(sortRows(rows, 'due', now).map((r) => r.title), ['c', 'a', 'b'])
+  assert.deepEqual(sortRows(rows, 'stashed', now).map((r) => r.title), ['a', 'c', 'b'])
+  assert.deepEqual(sortRows(rows, 'title', now).map((r) => r.title), ['a', 'b', 'c'])
+  assert.equal(normalizeSortMode('bogus'), 'due')
+  assert.equal(rows[0].title, 'b', 'input not mutated')
+})
