@@ -1,0 +1,25 @@
+codex-stash
+
+Copyright (c) 2026 ump45nose
+
+This project is MIT licensed. See LICENSE.
+
+Third-party material
+--------------------
+
+Codexion (MIT), https://github.com/niu-io/codexion
+  docs/EXTENSIONS.md — locator order, idempotent install/uninstall, versioned
+  node ids, and fail-closed disable. The behavior is reimplemented here; no
+  Codexion source files are copied.
+
+Codex App HUD (MIT), https://github.com/sxy-kumako/codex-app-hud
+  The active-thread probe `[data-app-action-sidebar-thread-id][aria-current="page"]`
+  and the `local:<id>` sidebar form are used as documented in
+  src/injector/README.md. Per-thread storage is keyed by the stable id, and
+  draft `client-new-thread` ids are rejected. No HUD source files are copied.
+
+Explodex, https://github.com/dan-dr/explodex
+  No license is offered. Nothing from that repository is copied. Public
+  architecture notes were used only as a list of sidebar attribute names
+  (`data-app-action-sidebar-*`) and as a reminder that injected nodes need an
+  explicit disposer list. Those names are recorded in codex-adapter/SELECTORS.md.

@@ -1,0 +1,12 @@
+{
+  "name": "@codex-stash/ui",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Stash section, date popover, and row menu. Knows nothing about Codex selectors.",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
