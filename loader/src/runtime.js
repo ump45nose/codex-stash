@@ -238,6 +238,15 @@ export function install(options = {}) {
       onSectionMenu(rect) {
         openSectionMenu(rect)
       },
+      onChangeDate(threadId, rect) {
+        openStashPopover(threadId, { anchor: rect })
+      },
+      onRemove(threadId) {
+        removeEntry(threadId, 'pill')
+      },
+      shortcuts: { date: rowKeys.date?.label ?? null, remove: rowKeys.remove?.label ?? null },
+      tooltipClass: adapter.tooltipClass?.() ?? '',
+      zoom: () => adapter.uiZoom?.() ?? 1,
     })
     if (adapter.rowActionSlots) {
       mountRowActions({

@@ -1,5 +1,7 @@
 import { ensureStyle } from './style.js'
 import { NODE_PREFIX } from './strings.js'
+import { DATE_ICON, UNSTASH_ICON } from './icons.js'
+import { attachTooltip } from './tooltip.js'
 
 const DOTS =
   '<svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><circle cx="3.33" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="12.67" cy="8" r="1.2" fill="currentColor"/></svg>'
@@ -24,6 +26,11 @@ const DOTS =
  *   onOpen: (threadId: string) => void,
  *   onContext: (threadId: string, x: number, y: number, anchor?: DOMRect) => void,
  *   onSectionMenu?: (anchor: DOMRect) => void,
+ *   onChangeDate?: (threadId: string, anchor: DOMRect) => void,
+ *   onRemove?: (threadId: string) => void,
+ *   shortcuts?: { date?: string | null, remove?: string | null },
+ *   tooltipClass?: string,
+ *   zoom?: () => number,
  * }} options
  */
 export function mountSection(options) {
@@ -31,7 +38,7 @@ export function mountSection(options) {
   const { doc, parent, strings, rows, collapsed, chrome } = options
   ensureStyle(doc, prefix)
   const id = `${prefix}section`
-  const signature = JSON.stringify({ section: strings.section, rows, chrome })
+  const signature = JSON.stringify({ section: strings.section, rows, chrome, shortcuts: options.shortcuts ?? null })
   let section = doc.getElementById(id)
   const fresh =
     !section?.isConnected ||
@@ -150,7 +157,7 @@ function build(options, prefix, existing, signature) {
   list.id = `${prefix}rows`
   list.className = 'codex-stash-v1-rows'
   list.setAttribute('role', 'list')
-  for (const row of rows) list.append(renderRow(doc, section, row, chrome, strings))
+  for (const row of rows) list.append(renderRow(doc, section, row, chrome, strings, options, prefix))
   wrap.append(list)
   host.append(wrap)
   return section
@@ -178,7 +185,7 @@ function fromMarkup(doc, markup) {
   return svg && svg.tagName.toLowerCase() === 'svg' ? svg : null
 }
 
-function renderRow(doc, section, row, chrome, strings) {
+function renderRow(doc, section, row, chrome, strings, options = {}, prefix = NODE_PREFIX) {
   const wrap = doc.createElement('div')
   wrap.className = `${chrome?.rowClass || ''} codex-stash-v1-row${row.missing ? ' codex-stash-v1-missing' : ''}`.trim()
   wrap.setAttribute('role', 'listitem')
@@ -199,6 +206,32 @@ function renderRow(doc, section, row, chrome, strings) {
     due.textContent = strings.due
     wrap.append(due)
   }
+  // Hover pills, same layer and structure as native 置顶/归档: a group revealed
+  // on row hover, each pill a direct child (no Radix tooltip span), own tooltip.
+  const actions = doc.createElement('div')
+  actions.className = 'codex-stash-v1-row-actions'
+  const pill = (action, label, tip, shortcut, icon, run) => {
+    const b = dotsButton(doc, chrome?.rowButton, label, icon)
+    b.removeAttribute('aria-haspopup')
+    b.classList.add('codex-stash-v1-pill')
+    b.setAttribute('data-codex-stash-action', action)
+    b.addEventListener('pointerdown', (event) => event.stopPropagation())
+    b.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      run(b.getBoundingClientRect())
+    })
+    attachTooltip(b, { text: tip, shortcut, className: options.tooltipClass || '', zoom: options.zoom, prefix })
+    return b
+  }
+  actions.append(
+    pill('change-date', strings.changeDate, strings.changeDateTip, options.shortcuts?.date ?? null, DATE_ICON, (rect) =>
+      handlers(section).onChangeDate?.(row.threadId, rect),
+    ),
+    pill('remove', strings.remove, strings.removeTip, options.shortcuts?.remove ?? null, UNSTASH_ICON, () =>
+      handlers(section).onRemove?.(row.threadId),
+    ),
+  )
   const more = dotsButton(doc, chrome?.rowButton, strings.options, chrome?.dotsSvg)
   more.classList.add('codex-stash-v1-row-more')
   more.addEventListener('click', (event) => {
@@ -207,7 +240,8 @@ function renderRow(doc, section, row, chrome, strings) {
     const rect = more.getBoundingClientRect()
     handlers(section).onContext(row.threadId, rect.left, rect.bottom, rect)
   })
-  wrap.append(more)
+  actions.append(more)
+  wrap.append(actions)
   wrap.addEventListener('click', () => handlers(section).onOpen(row.threadId))
   wrap.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') handlers(section).onOpen(row.threadId)

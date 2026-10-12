@@ -18,10 +18,17 @@ export function ensureStyle(doc, prefix = NODE_PREFIX) {
     #${prefix}section .codex-stash-v1-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; background: transparent; color: inherit; font: inherit; border: 0; padding: 0; cursor: inherit; }
     #${prefix}section .codex-stash-v1-date { flex: none; opacity: 0.6; font-size: 0.85em; transition: opacity 120ms; }
     #${prefix}section .codex-stash-v1-due { flex: none; font-size: 0.8em; color: var(--color-text-warning, #e25507); }
-    #${prefix}section .codex-stash-v1-row-more { flex: none; width: 0; overflow: hidden; opacity: 0; pointer-events: none; transition: opacity 120ms; }
-    #${prefix}section .codex-stash-v1-row:hover .codex-stash-v1-row-more,
-    #${prefix}section .codex-stash-v1-row:focus-within .codex-stash-v1-row-more { width: auto; overflow: visible; opacity: 1; pointer-events: auto; }
-    #${prefix}section .codex-stash-v1-row:hover .codex-stash-v1-date { opacity: 0.4; }
+    #${prefix}section .codex-stash-v1-row-actions { position: absolute; inset-inline-end: 0; top: 0; z-index: 10; height: 100%; display: flex; align-items: center; justify-content: flex-end; gap: calc(var(--spacing, 4px) * 2); padding-inline-end: calc(var(--spacing, 4px) * 1.5); margin-inline-end: calc(var(--spacing, 4px) * 0.5); opacity: 0; pointer-events: none; }
+    #${prefix}section .codex-stash-v1-row:hover .codex-stash-v1-row-actions,
+    #${prefix}section .codex-stash-v1-row:focus-within .codex-stash-v1-row-actions { opacity: 1; pointer-events: auto; }
+    /* Like native rows, the title gives way to the pills on hover (3 pills + gaps). */
+    #${prefix}section .codex-stash-v1-row:hover,
+    #${prefix}section .codex-stash-v1-row:focus-within { padding-inline-end: calc(var(--spacing, 4px) * 21); }
+    /* Native rows hide their trailing info (time / env icon) on hover. */
+    #${prefix}section .codex-stash-v1-row:hover .codex-stash-v1-date,
+    #${prefix}section .codex-stash-v1-row:hover .codex-stash-v1-due,
+    #${prefix}section .codex-stash-v1-row:focus-within .codex-stash-v1-date,
+    #${prefix}section .codex-stash-v1-row:focus-within .codex-stash-v1-due { display: none; }
     :where(#${prefix}section .codex-stash-v1-header-actions) { display: flex; flex-shrink: 0; align-items: center; gap: 4px; }
     :where(#${prefix}section .codex-stash-v1-reveal) { opacity: 0; pointer-events: none; }
     :where(#${prefix}section .codex-stash-v1-heading:hover .codex-stash-v1-reveal) { opacity: 1; pointer-events: auto; }
