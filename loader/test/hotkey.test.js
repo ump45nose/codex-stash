@@ -17,8 +17,10 @@ test('default hotkey matches Cmd on mac and Ctrl elsewhere', () => {
 test('Codex search and plan shortcuts are refused, including CodexHost reservations', () => {
   assert.equal(hotkeyConflict(parseHotkey('Mod+Shift+F')), 'codex:search-threads')
   assert.equal(hotkeyConflict(parseHotkey('Mod+Shift+P')), 'codex:plan-mode')
-  assert.equal(hotkeyConflict(parseHotkey('Mod+Shift+S')), null)
-  assert.equal(hotkeyConflict(parseHotkey('Mod+Shift+S'), ['Ctrl+Shift+S']), 'reserved:Ctrl+Shift+S')
+  assert.equal(hotkeyConflict(parseHotkey('Mod+Shift+H')), null)
+  assert.equal(hotkeyConflict(parseHotkey('Mod+Shift+H'), ['Ctrl+Shift+H']), 'reserved:Ctrl+Shift+H')
+  // Claimed by the live app's window-capture handler.
+  assert.equal(hotkeyConflict(parseHotkey('Mod+Shift+S')), 'codex:claimed-mod-shift-s')
 })
 
 test('reminders fire once per thread and due instant', () => {

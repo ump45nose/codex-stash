@@ -4,6 +4,12 @@
 export const CODEX_RESERVED = [
   { id: 'codex:search-threads', spec: 'Mod+Shift+F' },
   { id: 'codex:plan-mode', spec: 'Mod+Shift+P' },
+  // Observed live (2026-10-12, Codex Desktop + CodexHost): a window-capture
+  // handler already calls preventDefault for these, so they never reach us.
+  { id: 'codex:claimed-mod-shift-s', spec: 'Mod+Shift+S' },
+  { id: 'codex:claimed-mod-alt-s', spec: 'Mod+Alt+S' },
+  { id: 'codex:claimed-mod-shift-b', spec: 'Mod+Shift+B' },
+  { id: 'codex:claimed-mod-shift-u', spec: 'Mod+Shift+U' },
 ]
 
 /**
@@ -42,7 +48,7 @@ export function matchHotkey(event, hotkey, isMac) {
 
 /**
  * @param {Hotkey} hotkey
- * @param {string[]} [extraSpecs] CodexHost or caller reservations, as `Mod+Shift+S` strings
+ * @param {string[]} [extraSpecs] CodexHost or caller reservations, as `Mod+Shift+H` strings
  * @returns {string | null} conflicting id, or null
  */
 export function hotkeyConflict(hotkey, extraSpecs = []) {

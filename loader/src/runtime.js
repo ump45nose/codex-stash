@@ -25,6 +25,7 @@ import { GUARD, VERSION } from './version.js'
 
 export { GUARD, VERSION }
 
+export const DEFAULT_HOTKEY = 'Mod+Shift+H'
 const COLLAPSED_KEY = 'codex-stash:v1:collapsed'
 
 /**
@@ -84,7 +85,7 @@ export function install(options = {}) {
   const adapter =
     options.adapter ?? createAdapter(doc, { ignoreIdPrefix: NODE_PREFIX })
   const disposers = createDisposers()
-  const hotkey = parseHotkey(options.hotkey ?? 'Mod+Shift+S')
+  const hotkey = parseHotkey(options.hotkey ?? DEFAULT_HOTKEY)
   const isMac = options.isMac ?? /Mac|iPhone|iPad/.test(win.navigator?.platform ?? '')
   const reserved = [
     ...(options.reservedHotkeys ?? []),
@@ -197,8 +198,10 @@ export function install(options = {}) {
       },
       onOpen(threadId) {
         const row = rows.find((candidate) => candidate.threadId === threadId)
-        if (!row || row.missing) return
-        adapter.openThread(threadId)
+        if (!row) return
+        Promise.resolve(adapter.openThread(threadId)).then((result) => {
+          if (!result?.ok) log?.info?.('[codex-stash] thread not found in sidebar', threadId)
+        })
       },
       onContext(threadId, x, y) {
         openMenu(threadId, x, y)
@@ -207,11 +210,15 @@ export function install(options = {}) {
     checkDue(now)
   }
 
-  function commit(threadId, dueAt, editing) {
+  function commit(threadId, dueAt, editing, currentTitle) {
     const now = clock()
     if (editing && store.get(threadId)) store.setDate(threadId, dueAt, now)
     else {
-      const title = adapter.getThreadTitle(threadId) || store.get(threadId)?.title || strings.untitled
+      const title =
+        adapter.getThreadTitle(threadId) ||
+        currentTitle ||
+        store.get(threadId)?.title ||
+        strings.untitled
       store.stash(threadId, title, dueAt, now)
     }
     persistMirror()
@@ -234,6 +241,7 @@ export function install(options = {}) {
       else if (!current.ok) message = strings.noThread
       else threadId = current.id
     }
+    const currentTitle = editThreadId ? null : adapter.readCurrentTitle?.() ?? null
     const toggle = doc.getElementById(`${NODE_PREFIX}toggle`)
     const rect = toggle?.getBoundingClientRect?.()
     popover = mountPopover({
@@ -241,15 +249,16 @@ export function install(options = {}) {
       strings,
       message,
       hotkeyLabel: hotkey.spec,
+      editing: Boolean(editThreadId),
       left: rect ? rect.left : 16,
       top: rect ? rect.bottom + 4 : 72,
       onPreset(preset) {
         if (!threadId) return
-        commit(threadId, dueAtFromPreset(preset, clock()), Boolean(editThreadId))
+        commit(threadId, dueAtFromPreset(preset, clock()), Boolean(editThreadId), currentTitle)
       },
       onCustom(value) {
         if (!threadId) return
-        commit(threadId, dueAtFromDateInput(value), Boolean(editThreadId))
+        commit(threadId, dueAtFromDateInput(value), Boolean(editThreadId), currentTitle)
       },
       onClose() {
         popover = null
@@ -279,9 +288,18 @@ export function install(options = {}) {
     })
   }
 
+  let claimedWarned = false
   function onKey(event) {
-    if (disabled || conflict || event.defaultPrevented || event.repeat) return
+    if (disabled || conflict || event.repeat) return
     if (!matchHotkey(event, hotkey, isMac)) return
+    if (event.defaultPrevented) {
+      // Someone earlier (Codex, CodexHost) owns this combo; step aside, say so once.
+      if (!claimedWarned) {
+        claimedWarned = true
+        log?.warn?.('[codex-stash] hotkey already handled by the host app; choose another with --hotkey', hotkey.spec)
+      }
+      return
+    }
     event.preventDefault()
     if (popover || menu) {
       closeTransient()

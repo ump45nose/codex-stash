@@ -9,6 +9,7 @@ const PRESET_KEYS = ['tomorrow', 'in3days', 'nextMonday']
  *   strings: Record<string, string>,
  *   message?: string | null,
  *   hotkeyLabel?: string,
+ *   editing?: boolean,
  *   left: number,
  *   top: number,
  *   prefix?: string,
@@ -30,9 +31,11 @@ export function mountPopover(options) {
   pop.style.top = `${Math.max(8, options.top)}px`
 
   const heading = doc.createElement('p')
-  heading.textContent = options.hotkeyLabel
-    ? `${strings.stashCurrent} (${options.hotkeyLabel})`
-    : strings.stashCurrent
+  heading.textContent = options.editing
+    ? strings.changeDate
+    : options.hotkeyLabel
+      ? `${strings.stashCurrent} (${options.hotkeyLabel})`
+      : strings.stashCurrent
   pop.append(heading)
 
   if (options.message) {

@@ -18,7 +18,7 @@ import { stashHome, stashPaths } from './paths.js'
 const HELP = `codex-stash — Codex Desktop 收纳箱
 
 Usage:
-  codex-stash install [--port 9222] [--hotkey Mod+Shift+S] [--locale zh|en]
+  codex-stash install [--port 9222] [--hotkey Mod+Shift+H] [--locale zh|en]
   codex-stash uninstall [--port 9222]
   codex-stash status [--port 9222]
   codex-stash export [--port 9222]

@@ -52,7 +52,7 @@ function page() {
 }
 
 function pressStash(window) {
-  window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 's', metaKey: true, shiftKey: true, bubbles: true }))
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'h', metaKey: true, shiftKey: true, bubbles: true, cancelable: true }))
 }
 
 test('dom thread keys and stash-core canonical ids agree', () => {
@@ -135,7 +135,7 @@ test('install is idempotent, stashes by id, opens the row, and uninstalls cleanl
   assert.equal(warnings.length, 0)
 })
 
-test('a stashed row greys out when the thread disappears and a draft cannot be stashed', () => {
+test('a stashed row stays clickable when its native row is not rendered and a draft cannot be stashed', () => {
   const { window } = page()
   install({
     window,
@@ -149,7 +149,7 @@ test('a stashed row greys out when the thread disappears and a draft cannot be s
   window.document.querySelector(`[data-app-action-sidebar-thread-id="local:${UUID}"]`).remove()
   window[GUARD].render()
   const button = window.document.querySelector('.codex-stash-v1-title')
-  assert.equal(button.disabled, true)
+  assert.equal(button.disabled, false)
   assert.match(button.title, /不在侧栏/)
   assert.equal(window.document.querySelector('[data-app-action-sidebar-thread-id]'), null)
   uninstall({ window })
@@ -226,7 +226,7 @@ test('a broken sidebar disables the section and a reserved hotkey is not stolen'
   uninstall({ window: broken })
 
   const { window } = page()
-  window.__codexHostReservedHotkeys = ['Mod+Shift+S']
+  window.__codexHostReservedHotkeys = ['Mod+Shift+H']
   const installed = install({
     window,
     isMac: true,
@@ -234,7 +234,7 @@ test('a broken sidebar disables the section and a reserved hotkey is not stolen'
     log: { warn: () => {}, info() {} },
   })
   assert.equal(installed.hotkeyBound, false)
-  assert.match(installed.hotkeyConflict, /Mod\+Shift\+S/)
+  assert.match(installed.hotkeyConflict, /Mod\+Shift\+H/)
   pressStash(window)
   assert.equal(window.document.getElementById('codex-stash-v1-popover'), null)
   assert.ok(window.document.getElementById('codex-stash-v1-section'))
@@ -281,5 +281,21 @@ test('sending in another thread does not drop a different stash row', () => {
   scroll.append(other)
   window.document.querySelector('[aria-label="Send message"]').click()
   assert.match(window.document.querySelector('.codex-stash-v1-row').textContent, /Current title/)
+  uninstall({ window })
+})
+
+test('a hotkey the host already handled is skipped and warned once', () => {
+  const { window } = page()
+  const warnings = []
+  install({ window, isMac: true, reminderIntervalMs: 0, log: { warn: (...a) => warnings.push(a.join(' ')), info() {} } })
+  const claim = (e) => e.preventDefault()
+  window.addEventListener('keydown', claim, true)
+  pressStash(window)
+  pressStash(window)
+  window.removeEventListener('keydown', claim, true)
+  assert.equal(window.document.getElementById('codex-stash-v1-popover'), null)
+  assert.equal(warnings.filter((w) => /already handled/.test(w)).length, 1)
+  pressStash(window)
+  assert.ok(window.document.getElementById('codex-stash-v1-popover'))
   uninstall({ window })
 })

@@ -111,17 +111,17 @@ Default copy is Chinese. `~/.codex-stash/config.json`:
 
 ```json
 {
-  "hotkey": "Mod+Shift+S",
+  "hotkey": "Mod+Shift+H",
   "locale": "zh",
   "notify": true
 }
 ```
 
-`locale` 取 `zh` 或 `en`。也可以在命令行覆盖：`--hotkey Mod+Shift+S --locale en`。
+`locale` 取 `zh` 或 `en`。也可以在命令行覆盖：`--hotkey Mod+Shift+H --locale en`。
 
 ## 快捷键 / Hotkey
 
-默认 **⌘⇧S**（macOS）或 **Ctrl+Shift+S**（其他系统）。`Mod` 表示当前平台的主键。
+默认 **⌘⇧H**（macOS）或 **Ctrl+Shift+H**（其他系统）。⌘⇧S、⌘⌥S、⌘⇧B、⌘⇧U 在实测中已被 Codex 自身占用，不可用。`Mod` 表示当前平台的主键。
 
 不会绑定已知的 Codex 快捷键：
 
@@ -130,7 +130,7 @@ Default copy is Chinese. `~/.codex-stash/config.json`:
 
 冲突时分区仍会挂上（已有记录还能看），但快捷键不会注册，控制台有一条 `[codex-stash] hotkey not bound`。
 
-The default is **⌘⇧S** on macOS and **Ctrl+Shift+S** elsewhere. `Mod+Shift+F` (search threads) and `Mod+Shift+P` (plan mode on some surfaces) are refused. On a conflict the section still mounts, and the hotkey does not.
+The default is **⌘⇧H** on macOS and **Ctrl+Shift+H** elsewhere. ⌘⇧S, ⌘⌥S, ⌘⇧B and ⌘⇧U are already claimed by Codex in live testing and are refused. `Mod+Shift+F` (search threads) and `Mod+Shift+P` (plan mode on some surfaces) are refused. On a conflict the section still mounts, and the hotkey does not.
 
 到期提醒：窗口重新获得焦点时，以及默认每 60 秒，检查一次。已经 `Notification.permission === "granted"` 时才会发系统通知，每条记录的每个到期时刻只通知一次。插件不会主动弹出授权请求。未授权时仍然用「到期」标记。
 

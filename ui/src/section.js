@@ -15,6 +15,9 @@ import { NODE_PREFIX } from './strings.js'
  *     headingTag?: string,
  *     headingClass?: string,
  *     toggleTag?: string,
+ *     innerClass?: string,
+ *     headingTextClass?: string,
+ *     chevronSvg?: string,
  *     toggleClass?: string,
  *     rowClass?: string,
  *   } | null,
@@ -59,20 +62,44 @@ export function mountSection(options) {
   section.setAttribute('aria-label', strings.section)
   section.replaceChildren()
 
+  const host = chrome?.innerClass ? doc.createElement('div') : section
+  if (host !== section) {
+    host.className = chrome.innerClass
+    section.append(host)
+  }
   const heading = doc.createElement(chrome?.headingTag || 'div')
   heading.id = `${prefix}heading`
   heading.className = chrome?.headingClass || ''
+  let toggleParent = heading
+  if (chrome?.headingTextClass) {
+    toggleParent = doc.createElement('div')
+    toggleParent.className = chrome.headingTextClass
+    heading.append(toggleParent)
+  }
   const toggle = doc.createElement(chrome?.toggleTag || 'button')
   toggle.id = `${prefix}toggle`
   toggle.className = chrome?.toggleClass || ''
   if (toggle.tagName === 'BUTTON') toggle.type = 'button'
   toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true')
-  toggle.textContent = strings.section
+  const label = doc.createElement('span')
+  label.className = 'min-w-0 truncate'
+  label.textContent = strings.section
+  toggle.append(label)
+  if (chrome?.chevronSvg) {
+    // Presentation copy of the native disclosure icon; rotated like native.
+    const tpl = doc.createElement('template')
+    tpl.innerHTML = chrome.chevronSvg
+    const svg = tpl.content.firstElementChild
+    if (svg && svg.tagName.toLowerCase() === 'svg') {
+      svg.classList.toggle('-rotate-90', collapsed)
+      toggle.append(svg)
+    }
+  }
   toggle.addEventListener('click', (event) => {
     event.preventDefault()
     options.onToggle()
   })
-  heading.append(toggle)
+  toggleParent.append(toggle)
   if (rows.some((row) => row.due)) {
     const badge = doc.createElement('span')
     badge.id = `${prefix}due-count`
@@ -80,7 +107,7 @@ export function mountSection(options) {
     badge.textContent = strings.due
     heading.append(badge)
   }
-  section.append(heading)
+  host.append(heading)
 
   if (!collapsed) {
     const list = doc.createElement('div')
@@ -88,7 +115,7 @@ export function mountSection(options) {
     for (const row of rows) {
       list.append(renderRow(doc, row, chrome, strings, options.onOpen, options.onContext))
     }
-    section.append(list)
+    host.append(list)
   }
 
   if (section.parentElement !== parent) {
@@ -100,13 +127,14 @@ export function mountSection(options) {
 
 function renderRow(doc, row, chrome, strings, onOpen, onContext) {
   const wrap = doc.createElement('div')
-  wrap.className = `codex-stash-v1-row${row.missing ? ' codex-stash-v1-missing' : ''}`
+  wrap.className = `${chrome?.rowClass || ''} codex-stash-v1-row${row.missing ? ' codex-stash-v1-missing' : ''}`.trim()
   wrap.setAttribute('data-codex-stash-thread-id', row.threadId)
   const button = doc.createElement('button')
   button.type = 'button'
-  button.className = `${chrome?.rowClass || ''} codex-stash-v1-title`.trim()
+  button.className = 'codex-stash-v1-title'
   button.textContent = row.title
-  button.disabled = Boolean(row.missing)
+  // Not rendered in the native sidebar (e.g. its section is collapsed) is
+  // not the same as gone; the adapter expands sections to find it.
   button.title = row.missing ? strings.missing : row.title
   button.addEventListener('click', () => onOpen(row.threadId))
   const date = doc.createElement('time')

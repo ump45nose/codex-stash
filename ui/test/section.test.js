@@ -146,3 +146,12 @@ test('formatDueLabel stays in the local calendar', () => {
   const english = formatDueLabel(new Date(2026, 9, 13, 9).toISOString(), new Date(2026, 9, 12), 'en')
   assert.match(english, /Oct/)
 })
+
+test('change-date popover is titled 改日期, not 收纳当前会话', async () => {
+  const { JSDOM } = await import('jsdom')
+  const { mountPopover } = await import('../src/popover.js')
+  const { STRINGS } = await import('../src/strings.js')
+  const doc = new JSDOM('<!doctype html><body></body>').window.document
+  const pop = mountPopover({ doc, left: 0, top: 0, strings: STRINGS.zh, editing: true, hotkeyLabel: 'Mod+Shift+H', onPreset() {}, onCustom() {}, onClose() {} })
+  assert.ok(pop); assert.match(doc.getElementById('codex-stash-v1-popover').textContent, /^改日期/)
+})
