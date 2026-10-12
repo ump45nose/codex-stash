@@ -119,6 +119,24 @@ Default copy is Chinese. `~/.codex-stash/config.json`:
 
 `locale` 取 `zh` 或 `en`。也可以在命令行覆盖：`--hotkey Mod+Shift+H --locale en`。
 
+## 常驻运行 / Run persistently (macOS)
+
+CodexHost 每次启动 Codex 都会换一个调试端口，所以 `watch` 不传 `--port` 时会自动从正在运行的 Codex 主进程参数（`--remote-debugging-port=…`）里找端口。它会一直运行：端口变了就跟着换，页面重载、开新窗口或 Codex 重启后都会重新注入，已经挂载时不会重复注入。
+
+```bash
+codex-stash watch                 # 前台运行，自动发现端口
+codex-stash service install       # 安装为 LaunchAgent（RunAtLoad + KeepAlive）
+codex-stash service status
+codex-stash service uninstall     # 停止并删除 LaunchAgent
+```
+
+- LaunchAgent：`~/Library/LaunchAgents/io.github.ump45nose.codex-stash.plist`，执行 `/opt/homebrew/bin/node <repo>/loader/bin/codex-stash.mjs watch`（没有 Homebrew node 时使用当前 node）。
+- 日志：`~/Library/Logs/codex-stash/watch.log` 和 `watch.err.log`。
+- 临时停止：`launchctl bootout gui/$(id -u)/io.github.ump45nose.codex-stash`；恢复：`launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.github.ump45nose.codex-stash.plist`。
+- 停掉服务不会移除页面里已经挂载的收纳箱；要移除请再执行 `codex-stash uninstall`。
+
+CodexHost picks a new debugger port per launch, so `watch` without `--port` reads it from the running Codex main process (`--remote-debugging-port=…`). It keeps one CDP session per main renderer, follows port changes, and re-injects after reloads, new windows and Codex restarts, never twice while mounted. `codex-stash service install|uninstall|status` manages it as a LaunchAgent (RunAtLoad + KeepAlive, logs in `~/Library/Logs/codex-stash/`). Stopping the service does not unmount the section; run `codex-stash uninstall` for that. Other commands also auto-discover the port when `--port`/`CODEX_STASH_CDP_PORT` is absent, falling back to 9222.
+
 ## 快捷键 / Hotkey
 
 默认 **⌘⇧H**（macOS）或 **Ctrl+Shift+H**（其他系统）。⌘⇧S、⌘⌥S、⌘⇧B、⌘⇧U 在实测中已被 Codex 自身占用，不可用。`Mod` 表示当前平台的主键。

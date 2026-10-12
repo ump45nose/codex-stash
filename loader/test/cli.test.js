@@ -32,6 +32,7 @@ function harness(probe = { hasShell: true }) {
     },
     bundleSource: 'globalThis.__codexStashBundle = 1;',
     stop: Promise.resolve(),
+    discoverPorts: async () => [],
     async listTargets() {
       return [
         {
@@ -161,7 +162,7 @@ test('status fails closed when no main renderer is present', async () => {
 
 test('watch registers the persist binding and does not attach to devtools', async () => {
   const { page, deps } = harness()
-  const result = await run(['node', 'codex-stash', 'watch'], deps)
+  const result = await run(['node', 'codex-stash', 'watch', '--port', '9222'], deps)
   assert.equal(result.exitCode, 0)
   assert.deepEqual(page.bindings, ['codexStashPersist'])
 })

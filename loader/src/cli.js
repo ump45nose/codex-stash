@@ -14,6 +14,9 @@ import {
   writeStateExpression,
 } from './cdp.js'
 import { stashHome, stashPaths } from './paths.js'
+import { discoverDebugPorts } from './discover.js'
+import { createSupervisor } from './supervise.js'
+import { service, servicePaths } from './service.js'
 
 const HELP = `codex-stash — Codex Desktop 收纳箱
 
@@ -23,8 +26,14 @@ Usage:
   codex-stash status [--port 9222]
   codex-stash export [--port 9222]
   codex-stash import [--port 9222]
-  codex-stash watch [--port 9222]
+  codex-stash watch [--port 9222] [--interval 3000]
+  codex-stash service install|uninstall|status
   codex-stash help
+
+Without --port (or CODEX_STASH_CDP_PORT) the port is discovered from the
+running Codex process (--remote-debugging-port, as set by CodexHost); 9222 is
+the last resort. watch keeps running, follows port changes, and re-injects
+after reloads and Codex restarts. service installs watch as a LaunchAgent.
 
 The debugger must already be listening on 127.0.0.1. This tool never writes
 ~/.codex and never archives or deletes conversations.
@@ -39,7 +48,9 @@ The debugger must already be listening on 127.0.0.1. This tool never writes
 export function parseArgs(argv, env = process.env) {
   const args = argv.slice(2)
   const command = args[0] && !args[0].startsWith('-') ? args[0] : 'help'
-  let port = env.CODEX_STASH_CDP_PORT || '9222'
+  let port = env.CODEX_STASH_CDP_PORT || null
+  let interval = null
+  let action = null
   let hotkey = null
   let locale = null
   for (let index = 0; index < args.length; index += 1) {
@@ -47,15 +58,23 @@ export function parseArgs(argv, env = process.env) {
     if (token === '--port') port = required(args, ++index, '--port')
     else if (token === '--hotkey') hotkey = required(args, ++index, '--hotkey')
     else if (token === '--locale') locale = required(args, ++index, '--locale')
+    else if (token === '--interval') interval = Number(required(args, ++index, '--interval'))
+    else if (command === 'service' && index === 1 && !token.startsWith('-')) action = token
     else if (token === '--help' || token === '-h') return { command: 'help', port: null, hotkey, locale }
     else if (token.startsWith('-')) throw new TypeError(`unknown argument: ${token}`)
   }
-  if (!['install', 'uninstall', 'status', 'export', 'import', 'watch', 'help'].includes(command)) {
+  if (!['install', 'uninstall', 'status', 'export', 'import', 'watch', 'service', 'help'].includes(command)) {
     throw new TypeError(`unknown command: ${command}`)
   }
+  if (command === 'service' && !['install', 'uninstall', 'status'].includes(action)) {
+    throw new TypeError('usage: codex-stash service install|uninstall|status')
+  }
+  if (interval !== null && !(interval >= 500)) throw new TypeError('--interval must be >= 500 ms')
   return {
     command,
-    port: command === 'help' ? null : debuggerPort(port),
+    action,
+    interval: interval ?? 3000,
+    port: command === 'help' || port === null ? null : debuggerPort(port),
     hotkey,
     locale,
   }
@@ -87,6 +106,29 @@ export async function run(argv, deps = {}) {
     return { exitCode: 0 }
   }
 
+  if (parsed.command === 'service') {
+    try {
+      if (parsed.action === 'status') {
+        const { existsSync } = await import('node:fs')
+        const paths = servicePaths(deps.serviceHome ? { home: deps.serviceHome } : {})
+        io.log(JSON.stringify({ plist: paths.plist, installed: existsSync(paths.plist), logDir: paths.logDir }, null, 2))
+        return { exitCode: 0 }
+      }
+      const result = await (deps.service ?? service)(parsed.action, {})
+      io.log(JSON.stringify(result, null, 2))
+      return { exitCode: 0 }
+    } catch (error) {
+      io.error(error instanceof Error ? error.message : error)
+      return { exitCode: 1 }
+    }
+  }
+
+  const discoverPorts = deps.discoverPorts ?? (() => discoverDebugPorts())
+  if (parsed.command !== 'watch' && parsed.port === null) {
+    const found = await discoverPorts().catch(() => [])
+    parsed.port = found[0] ?? 9222
+  }
+
   const home = stashHome(deps.env ?? process.env, deps.home)
   const paths = stashPaths(home)
   const storage = createJsonFileStorage(paths.state)
@@ -107,7 +149,33 @@ export async function run(argv, deps = {}) {
       return { exitCode: rows.some((row) => row.probe?.hasShell) ? 0 : 1 }
     }
 
-    if (parsed.command === 'export' || parsed.command === 'import' || parsed.command === 'install' || parsed.command === 'uninstall' || parsed.command === 'watch') {
+    if (parsed.command === 'watch') {
+      const supervisor = createSupervisor({
+        port: parsed.port,
+        discoverPorts,
+        listTargets: (port) => targetsOf(port, deps),
+        openClient: (target) => openClient(deps, target),
+        bundleSource: deps.bundleSource ?? readBundle(),
+        config: readConfig(paths.config, parsed),
+        storage,
+        acceptPersist: (payload) => acceptPersist(payload, storage),
+        io,
+      })
+      io.log(`watching (${parsed.port ? `port ${parsed.port}` : 'auto port'}, every ${parsed.interval} ms)`)
+      let stopped = false
+      const stop = (deps.stop ?? stopSignal()).then(() => {
+        stopped = true
+      })
+      while (!stopped) {
+        await supervisor.tick()
+        if (stopped) break
+        await Promise.race([stop, new Promise((resolve) => setTimeout(resolve, parsed.interval))])
+      }
+      supervisor.close()
+      return { exitCode: 0 }
+    }
+
+    if (parsed.command === 'export' || parsed.command === 'import' || parsed.command === 'install' || parsed.command === 'uninstall') {
       const shells = await shellClients(parsed.port, deps)
       if (!shells.length) {
         io.error('no Codex main renderer found on 127.0.0.1:' + parsed.port)
@@ -165,23 +233,6 @@ export async function run(argv, deps = {}) {
         closeAll(shells)
         return { exitCode: 0 }
       }
-
-      for (const shell of shells) {
-        await shell.client.send('Runtime.addBinding', { name: 'codexStashPersist' })
-        shell.client.onEvent?.((message) => {
-          if (message.method !== 'Runtime.bindingCalled') return
-          if (message.params?.name !== 'codexStashPersist') return
-          try {
-            acceptPersist(message.params.payload, storage)
-          } catch (error) {
-            io.error(error instanceof Error ? error.message : error)
-          }
-        })
-      }
-      io.log('watching')
-      await (deps.stop ?? sigint())
-      closeAll(shells)
-      return { exitCode: 0 }
     }
   } catch (error) {
     io.error(error instanceof Error ? error.message : error)
@@ -304,9 +355,10 @@ function closeAll(shells) {
   }
 }
 
-function sigint() {
+function stopSignal() {
   return new Promise((resolve) => {
     process.once('SIGINT', () => resolve())
+    process.once('SIGTERM', () => resolve())
   })
 }
 

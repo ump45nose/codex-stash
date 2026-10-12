@@ -49,6 +49,10 @@ export function connectCdp(wsUrl) {
     ws.addEventListener('open', () => resolve(undefined))
     ws.addEventListener('error', () => reject(new Error(`CDP connection failed for ${wsUrl}`)))
   })
+  ws.addEventListener('close', () => {
+    for (const waiter of pending.values()) waiter.reject(new Error('CDP connection closed'))
+    pending.clear()
+  })
   ws.addEventListener('message', (event) => {
     const message = JSON.parse(String(event.data))
     if (message.id && pending.has(message.id)) {
@@ -65,6 +69,10 @@ export function connectCdp(wsUrl) {
     send(method, params = {}) {
       const id = ++nextId
       return new Promise((resolve, reject) => {
+        if (ws.readyState !== 1) {
+          reject(new Error('CDP connection closed'))
+          return
+        }
         pending.set(id, { resolve, reject })
         ws.send(JSON.stringify({ id, method, params }))
       })
