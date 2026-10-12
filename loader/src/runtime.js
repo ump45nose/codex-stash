@@ -29,6 +29,9 @@ import { GUARD, VERSION } from './version.js'
 export { GUARD, VERSION }
 
 export const DEFAULT_HOTKEY = 'Mod+Shift+H'
+/** 改日期 / 移出 on the hovered stash row (or the open thread's entry). Free in Codex 26.x keymap. */
+export const DEFAULT_DATE_HOTKEY = 'Mod+Shift+D'
+export const DEFAULT_REMOVE_HOTKEY = 'Mod+Shift+J'
 const COLLAPSED_KEY = 'codex-stash:v1:collapsed'
 const SORT_KEY = 'codex-stash:v1:sort'
 
@@ -43,6 +46,8 @@ const SORT_KEY = 'codex-stash:v1:sort'
  *   adapter?: ReturnType<typeof createAdapter>,
  *   seed?: unknown,
  *   hotkey?: string,
+ *   hotkeyDate?: string,
+ *   hotkeyRemove?: string,
  *   locale?: 'zh' | 'en',
  *   isMac?: boolean,
  *   notify?: boolean,
@@ -97,6 +102,22 @@ export function install(options = {}) {
   ]
   const conflict = hotkeyConflict(hotkey, reserved)
   const shortcut = hotkeyLabel(hotkey, isMac)
+  // Row actions: each binds only when free (Codex keymap, CodexHost, and the stash hotkey).
+  const rowKeys = {}
+  for (const [name, spec] of [
+    ['date', options.hotkeyDate ?? DEFAULT_DATE_HOTKEY],
+    ['remove', options.hotkeyRemove ?? DEFAULT_REMOVE_HOTKEY],
+  ]) {
+    if (!spec) continue
+    const parsed = parseHotkey(spec)
+    const taken = [...reserved, hotkey.spec, ...Object.values(rowKeys).map((k) => k.hotkey.spec)]
+    const clash = hotkeyConflict(parsed, taken)
+    if (clash) {
+      log?.warn?.('[codex-stash] row hotkey not bound', name, spec, clash)
+      continue
+    }
+    rowKeys[name] = { hotkey: parsed, label: hotkeyLabel(parsed, isMac) }
+  }
   let hotkeyBound = false
   let disabled = null
   let warned = false
@@ -105,6 +126,7 @@ export function install(options = {}) {
   let collapsed = readCollapsed(win)
   let sortMode = readSort(win)
   let lastUnpin = null
+  let lastRepin = null
   /** @type {{ close: () => void } | null} */
   let popover = null
   /** @type {{ close: () => void } | null} */
@@ -266,14 +288,54 @@ export function install(options = {}) {
   function unpinAfterStash(threadId) {
     if (typeof adapter.unpinThread !== 'function') return
     lastUnpin = { threadId, pending: true }
-    Promise.resolve(adapter.unpinThread(threadId))
-      .then((result) => {
-        lastUnpin = { threadId, ...result }
+    Promise.resolve(adapter.pinPosition ? adapter.pinPosition(threadId) : null)
+      .catch(() => null)
+      .then(async (position) => {
+        const result = await adapter.unpinThread(threadId)
+        lastUnpin = { threadId, ...result, position }
         if (!result?.ok) log?.warn?.('[codex-stash] unpin failed', threadId, result?.reason)
-        else if (result.wasPinned) log?.info?.('[codex-stash] unpinned', threadId)
+        else if (result.wasPinned) {
+          log?.info?.('[codex-stash] unpinned', threadId)
+          // Remember it so any removal can put the pin back (stash-core holds it).
+          if (store.get(threadId) && store.setPin(threadId, position ?? {}, clock())) persistMirror()
+        }
       })
       .catch((error) => {
         lastUnpin = { threadId, ok: false, reason: String(error) }
+      })
+  }
+
+  /**
+   * Every removal path (移出, its hotkey, auto-unstash on a sent message)
+   * comes through here: drop our record, then re-pin if it was pinned.
+   */
+  function removeEntry(threadId, reason) {
+    const row = store.take(threadId, clock())
+    if (!row) return false
+    persistMirror()
+    closeTransient()
+    render()
+    if (row.pin?.wasPinned) repinAfterRemove(row, reason)
+    return true
+  }
+
+  function repinAfterRemove(row, reason) {
+    if (typeof adapter.repinThread !== 'function') return
+    lastRepin = { threadId: row.threadId, reason, pending: true }
+    Promise.resolve(
+      adapter.repinThread(row.threadId, {
+        title: adapter.getThreadTitle(row.threadId) || row.title,
+        index: row.pin.index,
+        beforeThreadId: row.pin.beforeThreadId,
+      }),
+    )
+      .then((result) => {
+        lastRepin = { threadId: row.threadId, reason, ...result }
+        if (!result?.ok) log?.warn?.('[codex-stash] re-pin failed', row.threadId, result?.reason)
+        else log?.info?.('[codex-stash] re-pinned', row.threadId, result.via, JSON.stringify(result.position))
+      })
+      .catch((error) => {
+        lastRepin = { threadId: row.threadId, reason, ok: false, reason2: String(error) }
       })
   }
 
@@ -363,11 +425,10 @@ export function install(options = {}) {
       onChangeDate() {
         openStashPopover(threadId, { anchor })
       },
+      changeDateShortcut: rowKeys.date?.label ?? null,
+      removeShortcut: rowKeys.remove?.label ?? null,
       onRemove() {
-        store.unstash(threadId, clock())
-        persistMirror()
-        closeTransient()
-        render()
+        removeEntry(threadId, 'remove')
       },
       onClose() {
         menu = null
@@ -376,7 +437,31 @@ export function install(options = {}) {
   }
 
   let claimedWarned = false
+  /** Hovered stash row, else the open thread when it is stashed. */
+  function stashTarget() {
+    const hovered = hoveredStash && hoveredStash.isConnected ? hoveredStash : null
+    const id = hovered?.getAttribute('data-codex-stash-thread-id')
+    if (id && store.get(id)) return { threadId: store.get(id).threadId, anchor: hovered.getBoundingClientRect() }
+    const current = currentThread()
+    if (current.ok && store.get(current.id)) return { threadId: store.get(current.id).threadId, anchor: null }
+    return null
+  }
+
+  function onRowKey(event) {
+    if (disabled || event.repeat || event.defaultPrevented) return false
+    const name = Object.keys(rowKeys).find((k) => matchHotkey(event, rowKeys[k].hotkey, isMac))
+    if (!name) return false
+    const target = stashTarget()
+    if (!target) return false
+    event.preventDefault()
+    closeTransient()
+    if (name === 'date') openStashPopover(target.threadId, { anchor: target.anchor })
+    else removeEntry(target.threadId, 'hotkey')
+    return true
+  }
+
   function onKey(event) {
+    if (onRowKey(event)) return
     if (disabled || conflict || event.repeat) return
     if (!matchHotkey(event, hotkey, isMac)) return
     if (event.defaultPrevented) {
@@ -399,19 +484,20 @@ export function install(options = {}) {
   }
 
   let hoveredRow = null
+  let hoveredStash = null
   function onPointerOver(event) {
+    hoveredStash = event.target?.closest?.('[data-codex-stash-thread-id]') ?? null
     const id = adapter.threadIdFromNode?.(event.target)
     hoveredRow = id ? event.target.closest?.('[data-app-action-sidebar-thread-id]') ?? null : null
   }
   doc.addEventListener('pointerover', onPointerOver, true)
   disposers.add(() => doc.removeEventListener('pointerover', onPointerOver, true))
 
-  if (conflict) {
-    log?.warn?.('[codex-stash] hotkey not bound', conflict)
-  } else {
+  if (conflict) log?.warn?.('[codex-stash] hotkey not bound', conflict)
+  else hotkeyBound = true
+  if (!conflict || Object.keys(rowKeys).length) {
     win.addEventListener('keydown', onKey)
     disposers.add(() => win.removeEventListener('keydown', onKey))
-    hotkeyBound = true
   }
 
   disposers.add(
@@ -422,10 +508,8 @@ export function install(options = {}) {
       } catch {
         return
       }
-      if (!store.onUserMessage(threadId, clock())) return
-      closeTransient()
-      persistMirror()
-      render()
+      if (!store.get(threadId)) return
+      removeEntry(threadId, 'message')
     }),
   )
 
@@ -473,6 +557,10 @@ export function install(options = {}) {
     get lastUnpin() {
       return lastUnpin
     },
+    get lastRepin() {
+      return lastRepin
+    },
+    rowHotkeys: Object.fromEntries(Object.entries(rowKeys).map(([k, v]) => [k, v.hotkey.spec])),
     get sortMode() {
       return sortMode
     },

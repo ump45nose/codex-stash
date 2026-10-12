@@ -11,6 +11,7 @@ import { GUARD, install, uninstall } from '../src/runtime.js'
 const here = dirname(fileURLToPath(import.meta.url))
 const UUID = '11111111-1111-1111-1111-111111111111'
 const OTHER = '22222222-2222-2222-2222-222222222222'
+const THIRD_ID = '33333333-3333-3333-3333-333333333333'
 
 function page() {
   const html = `<!doctype html><html><body>
@@ -116,7 +117,7 @@ test('install is idempotent, stashes by id, opens the row, and uninstalls cleanl
 
   row.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 12, clientY: 20 }))
   const menu = window.document.getElementById('codex-stash-v1-menu')
-  ;[...menu.querySelectorAll('[role=menuitem]')].find((button) => button.textContent === '移出').click()
+  ;[...menu.querySelectorAll('[role=menuitem]')].find((button) => button.textContent.startsWith('移出')).click()
   assert.equal(window.document.querySelector('.codex-stash-v1-row'), null)
 
   pressStash(window)
@@ -193,7 +194,7 @@ test('changing the date keeps the thread and a due reminder notifies once', () =
   window.document.querySelector('[data-preset="tomorrow"]').click()
   const row = window.document.querySelector('.codex-stash-v1-row')
   row.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 8, clientY: 8 }))
-  ;[...window.document.querySelectorAll('#codex-stash-v1-menu [role=menuitem]')].find((button) => button.textContent === '改日期').click()
+  ;[...window.document.querySelectorAll('#codex-stash-v1-menu [role=menuitem]')].find((button) => button.textContent.startsWith('改日期')).click()
   window.document.querySelector('[data-preset="nextMonday"]').click()
   assert.equal(window.document.querySelectorAll('.codex-stash-v1-row').length, 1)
 
@@ -302,8 +303,10 @@ test('a hotkey the host already handled is skipped and warned once', () => {
 
 function addNativeRow(window, id, title, { pinned = false } = {}) {
   const scroll = window.document.querySelector('[data-app-action-sidebar-scroll]')
+  const pinnedSection = window.document.querySelector('[data-app-action-sidebar-section="pinned"]')
+  const home = pinned ? pinnedSection : scroll
   // Mirrors live DOM: each pill sits in a Radix tooltip trigger span.
-  scroll.insertAdjacentHTML(
+  home.insertAdjacentHTML(
     'beforeend',
     `<div class="group native-row" data-app-action-sidebar-thread-row data-app-action-sidebar-thread-id="local:${id}"
        data-app-action-sidebar-thread-pinned="${pinned}" data-app-action-sidebar-thread-title="${title}" role="button">${title}
@@ -312,11 +315,15 @@ function addNativeRow(window, id, title, { pinned = false } = {}) {
          <span data-state="closed" class="contents"><button type="button" class="pill" data-pill="" data-size="3xs" aria-label="归档聊天">archive</button></span>
        </div></div>`,
   )
-  const row = scroll.lastElementChild
+  const row = home.lastElementChild
+  // Like Codex: pinning moves the row to the end of 置顶, unpinning moves it out.
   row.querySelector('[aria-label$="置顶聊天"]').addEventListener('click', (event) => {
     event.stopPropagation()
     const next = row.getAttribute('data-app-action-sidebar-thread-pinned') !== 'true'
-    setTimeout(() => row.setAttribute('data-app-action-sidebar-thread-pinned', String(next)), 5)
+    setTimeout(() => {
+      row.setAttribute('data-app-action-sidebar-thread-pinned', String(next))
+      ;(next ? pinnedSection : scroll).append(row)
+    }, 5)
   })
   return row
 }
@@ -368,7 +375,7 @@ test('stashing a pinned chat unpins it through the native pin control and confir
   assert.equal(pinned.getAttribute('data-app-action-sidebar-thread-pinned'), 'false')
   assert.equal(other.getAttribute('data-app-action-sidebar-thread-pinned'), 'true')
   assert.equal(archived, 0)
-  assert.deepEqual(window[GUARD].lastUnpin, { threadId: OTHER, ok: true, wasPinned: true })
+  assert.deepEqual(window[GUARD].lastUnpin, { threadId: OTHER, ok: true, wasPinned: true, position: { index: 0, beforeThreadId: THIRD_ID } })
   // An unpinned chat is left alone.
   pressStash(window)
   window.document.querySelector('[data-preset="tomorrow"]').click()
@@ -432,6 +439,100 @@ test('collapse is applied in place for animation; row "..." opens 改日期/移�
   assert.equal(wrap.getAttribute('data-collapsed'), 'false')
   window.document.querySelector('.codex-stash-v1-row-more').click()
   const labels = [...window.document.querySelectorAll('#codex-stash-v1-menu [role=menuitem]')].map((i) => i.textContent)
-  assert.deepEqual(labels, ['改日期', '移出'])
+  assert.deepEqual(labels, ['改日期⇧⌘D', '移出⇧⌘J'])
+  uninstall({ window })
+})
+
+const THIRD = '33333333-3333-3333-3333-333333333333'
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const key = (window, k) =>
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { key: k, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }))
+
+test('stash remembers the pin; 移出 re-pins through the native pill and reports the position', async () => {
+  const { window } = page()
+  const row = addNativeRow(window, OTHER, 'Pinned thread', { pinned: true })
+  addNativeRow(window, THIRD, 'Next pinned', { pinned: true })
+  install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} } })
+  row.querySelector('[id^="codex-stash-v1-act-"]').click()
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  await wait(150)
+  assert.equal(row.getAttribute('data-app-action-sidebar-thread-pinned'), 'false')
+  const saved = JSON.parse(window.localStorage.getItem('codex-stash:v1:state') ?? 'null')
+  const pin = saved ? saved.items[`local:${OTHER}`]?.pin : null
+  if (saved) assert.deepEqual(pin, { wasPinned: true, index: 0, beforeThreadId: THIRD })
+  window.document.querySelector(`[data-codex-stash-thread-id="local:${OTHER}"] .codex-stash-v1-row-more, [data-codex-stash-thread-id="${OTHER}"] .codex-stash-v1-row-more`).click()
+  window.document.querySelector('[data-action="remove"]').click()
+  await wait(400)
+  assert.equal(row.getAttribute('data-app-action-sidebar-thread-pinned'), 'true')
+  const repin = window[GUARD].lastRepin
+  assert.equal(repin.ok, true)
+  assert.equal(repin.via, 'row')
+  assert.equal(repin.reason, 'remove')
+  // The fixture has no native 置顶 sort menu: position is reported, not forced.
+  assert.equal(repin.position.restored, false)
+  uninstall({ window })
+})
+
+test('改日期 / 移出 hotkeys target the hovered stash row, else the open thread; menu shows hints', async () => {
+  const { window } = page()
+  addNativeRow(window, OTHER, 'Other thread')
+  const result = install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} } })
+  assert.equal(result.status, 'installed')
+  assert.deepEqual(window[GUARD].rowHotkeys, { date: 'Mod+Shift+D', remove: 'Mod+Shift+J' })
+  pressStash(window)
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  window.document.querySelector(`[id="codex-stash-v1-act-${OTHER}"]`).click()
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  const rowFor = (id) => [...window.document.querySelectorAll('.codex-stash-v1-row')].find((r) => r.getAttribute('data-codex-stash-thread-id').endsWith(id))
+  rowFor(OTHER).querySelector('.codex-stash-v1-row-more').click()
+  const kbds = [...window.document.querySelectorAll('#codex-stash-v1-menu .codex-stash-v1-kbd')].map((k) => k.textContent)
+  assert.deepEqual(kbds, ['⇧⌘D', '⇧⌘J'])
+  window.document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }))
+  window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  // Hovered stash row → 改日期 opens the editor for that row.
+  rowFor(OTHER).dispatchEvent(new window.MouseEvent('pointerover', { bubbles: true }))
+  key(window, 'd')
+  assert.match(window.document.getElementById('codex-stash-v1-popover').textContent, /Other thread/)
+  window.document.querySelector('[data-preset="nextMonday"]').click()
+  // Hovered → 移出 removes exactly that row.
+  rowFor(OTHER).dispatchEvent(new window.MouseEvent('pointerover', { bubbles: true }))
+  key(window, 'j')
+  assert.equal(rowFor(OTHER), undefined)
+  assert.ok(rowFor(UUID))
+  // Nothing hovered → the open thread's entry.
+  window.document.body.dispatchEvent(new window.MouseEvent('pointerover', { bubbles: true }))
+  key(window, 'j')
+  assert.equal(rowFor(UUID), undefined)
+  // Not stashed → the key is left to Codex.
+  const event = new window.KeyboardEvent('keydown', { key: 'j', metaKey: true, shiftKey: true, bubbles: true, cancelable: true })
+  window.dispatchEvent(event)
+  assert.equal(event.defaultPrevented, false)
+  uninstall({ window })
+})
+
+test('row hotkeys are configurable and never bind over a reserved combo', () => {
+  const { window } = page()
+  const warnings = []
+  install({ window, isMac: true, reminderIntervalMs: 0, hotkeyDate: 'Mod+Shift+K', hotkeyRemove: 'Mod+Shift+U', log: { warn: (...a) => warnings.push(a.join(' ')), info() {} } })
+  assert.deepEqual(window[GUARD].rowHotkeys, { date: 'Mod+Shift+K' })
+  assert.ok(warnings.some((w) => w.includes('Mod+Shift+U')))
+  uninstall({ window })
+})
+
+test('auto-unstash on a sent message also restores the pin', async () => {
+  const { window } = page()
+  const row = addNativeRow(window, OTHER, 'Pinned thread', { pinned: true })
+  install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} } })
+  row.querySelector('[id^="codex-stash-v1-act-"]').click()
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  await wait(150)
+  assert.equal(row.getAttribute('data-app-action-sidebar-thread-pinned'), 'false')
+  // Open that thread and send.
+  window.document.querySelector('[aria-current="page"]').removeAttribute('aria-current')
+  row.setAttribute('aria-current', 'page')
+  window.document.querySelector('[aria-label="Send message"]').click()
+  await wait(400)
+  assert.equal(row.getAttribute('data-app-action-sidebar-thread-pinned'), 'true')
+  assert.equal(window[GUARD].lastRepin.reason, 'message')
   uninstall({ window })
 })

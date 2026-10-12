@@ -112,12 +112,18 @@ Default copy is Chinese. `~/.codex-stash/config.json`:
 ```json
 {
   "hotkey": "Mod+Shift+H",
+  "hotkeyDate": "Mod+Shift+D",
+  "hotkeyRemove": "Mod+Shift+J",
   "locale": "zh",
   "notify": true
 }
 ```
 
-`locale` 取 `zh` 或 `en`。也可以在命令行覆盖：`--hotkey Mod+Shift+H --locale en`。
+`locale` 取 `zh` 或 `en`。也可以在命令行覆盖：`--hotkey Mod+Shift+H --hotkey-date Mod+Shift+D --hotkey-remove Mod+Shift+J --locale en`。
+
+`hotkeyDate`（改日期，默认 ⇧⌘D）和 `hotkeyRemove`（移出，默认 ⇧⌘J）作用于鼠标悬停的收纳行；没有悬停时作用于当前打开且已收纳的聊天。与 Codex 内置快捷键或 CodexHost 保留键冲突时不绑定并在日志里提示。
+
+从置顶收纳的聊天会记住置顶状态和位置；移出（菜单、快捷键或在该聊天发消息自动移出）时通过 Codex 自己的置顶操作恢复，手动排序时恢复原位置。
 
 ## 常驻运行 / Run persistently (macOS)
 

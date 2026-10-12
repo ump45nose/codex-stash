@@ -35,6 +35,8 @@ export const SELECTOR_TABLE = {
   threadActive: '[data-app-action-sidebar-thread-active="true"]',
   threadSelected: '[data-app-action-sidebar-thread-selected="true"]',
   rowHoverActions: '[class*="group-hover:opacity-100"] button[data-pill]',
+  searchButton: 'button[aria-label="搜索"], button[aria-label="Search"]',
+  threadActionsButton: 'button[aria-label="聊天操作"], button[aria-label="Thread actions"]',
   rowHoverGroup: '[class*="group-hover:opacity-100"]',
   threadPinnedAttr: 'data-app-action-sidebar-thread-pinned',
   projectIdAttr: 'data-app-action-sidebar-project-id',

@@ -21,7 +21,8 @@ import { service, servicePaths } from './service.js'
 const HELP = `codex-stash — Codex Desktop 收纳箱
 
 Usage:
-  codex-stash install [--port 9222] [--hotkey Mod+Shift+H] [--locale zh|en]
+  codex-stash install [--port 9222] [--hotkey Mod+Shift+H] [--hotkey-date Mod+Shift+D]
+                     [--hotkey-remove Mod+Shift+J] [--locale zh|en]
   codex-stash uninstall [--port 9222]
   codex-stash status [--port 9222]
   codex-stash export [--port 9222]
@@ -52,11 +53,15 @@ export function parseArgs(argv, env = process.env) {
   let interval = null
   let action = null
   let hotkey = null
+  let hotkeyDate = null
+  let hotkeyRemove = null
   let locale = null
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index]
     if (token === '--port') port = required(args, ++index, '--port')
     else if (token === '--hotkey') hotkey = required(args, ++index, '--hotkey')
+    else if (token === '--hotkey-date') hotkeyDate = required(args, ++index, '--hotkey-date')
+    else if (token === '--hotkey-remove') hotkeyRemove = required(args, ++index, '--hotkey-remove')
     else if (token === '--locale') locale = required(args, ++index, '--locale')
     else if (token === '--interval') interval = Number(required(args, ++index, '--interval'))
     else if (command === 'service' && index === 1 && !token.startsWith('-')) action = token
@@ -76,6 +81,8 @@ export function parseArgs(argv, env = process.env) {
     interval: interval ?? 3000,
     port: command === 'help' || port === null ? null : debuggerPort(port),
     hotkey,
+    hotkeyDate,
+    hotkeyRemove,
     locale,
   }
 }
@@ -321,6 +328,10 @@ function readConfig(file, parsed) {
   const hotkey = parsed.hotkey || stored.hotkey
   const locale = parsed.locale || stored.locale
   if (hotkey) config.hotkey = hotkey
+  const hotkeyDate = parsed.hotkeyDate || stored.hotkeyDate
+  const hotkeyRemove = parsed.hotkeyRemove || stored.hotkeyRemove
+  if (hotkeyDate) config.hotkeyDate = hotkeyDate
+  if (hotkeyRemove) config.hotkeyRemove = hotkeyRemove
   if (locale === 'zh' || locale === 'en') config.locale = locale
   if (typeof stored.notify === 'boolean') config.notify = stored.notify
   return config

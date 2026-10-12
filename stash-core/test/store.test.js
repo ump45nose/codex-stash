@@ -109,3 +109,19 @@ test('sortRows orders by due date, stash time, or title', async () => {
   assert.equal(normalizeSortMode('bogus'), 'due')
   assert.equal(rows[0].title, 'b', 'input not mutated')
 })
+
+test('pin memory survives date changes, round-trips storage, and comes back on take', () => {
+  let saved = null
+  const storage = { load: () => saved, save: (state) => (saved = JSON.parse(JSON.stringify(state))) }
+  const store = createStashStore(storage)
+  const now = new Date('2026-10-12T10:00:00Z')
+  store.stash('local:11111111-1111-1111-1111-111111111111', 'A', '2026-10-13T00:00:00Z', now)
+  assert.equal(store.setPin('local:11111111-1111-1111-1111-111111111111', { index: 2, beforeThreadId: 'local:22222222-2222-2222-2222-222222222222' }, now), true)
+  store.setDate('local:11111111-1111-1111-1111-111111111111', '2026-10-20T00:00:00Z', now)
+  store.stash('local:11111111-1111-1111-1111-111111111111', 'A', '2026-10-21T00:00:00Z', now)
+  const reloaded = createStashStore(storage)
+  const row = reloaded.take('local:11111111-1111-1111-1111-111111111111', now)
+  assert.deepEqual(row.pin, { wasPinned: true, index: 2, beforeThreadId: '22222222-2222-2222-2222-222222222222' })
+  assert.equal(reloaded.take('local:11111111-1111-1111-1111-111111111111', now), null)
+  assert.equal(reloaded.setPin('local:11111111-1111-1111-1111-111111111111', {}, now), false)
+})

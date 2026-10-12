@@ -1,9 +1,10 @@
 import { canonicalThreadId } from './thread-id.js'
 import { normalizeDueAt } from './dates.js'
-import { emptyState, parseState } from './state.js'
+import { emptyState, parsePin, parseState } from './state.js'
 
 /**
- * @typedef {{ title: string, dueAt: string, stashedAt: string }} StashItem
+ * @typedef {{ wasPinned: true, index: number | null, beforeThreadId: string | null }} PinMemory
+ * @typedef {{ title: string, dueAt: string, stashedAt: string, pin?: PinMemory }} StashItem
  * @typedef {{ threadId: string } & StashItem} StashRow
  */
 
@@ -28,6 +29,7 @@ export function createStashStore(storage) {
       title: item.title,
       dueAt: item.dueAt,
       stashedAt: item.stashedAt,
+      ...(item.pin ? { pin: { ...item.pin } } : {}),
     }
   }
 
@@ -47,6 +49,7 @@ export function createStashStore(storage) {
         title,
         dueAt,
         stashedAt: previous?.stashedAt ?? now.toISOString(),
+        ...(previous?.pin ? { pin: previous.pin } : {}),
       }
       persist(now)
       return copy(id, state.items[id])
@@ -67,15 +70,46 @@ export function createStashStore(storage) {
     },
 
     /**
+     * Remember that the chat was pinned when stashed (and where), so removal
+     * can put it back. Pass null to forget.
+     * @param {string} threadId
+     * @param {{ index?: number | null, beforeThreadId?: string | null } | null} pin
+     * @param {Date} [now]
+     */
+    setPin(threadId, pin, now = new Date()) {
+      const id = canonicalThreadId(threadId)
+      const item = state.items[id]
+      if (!item) return false
+      const parsed = pin ? parsePin({ wasPinned: true, ...pin }).pin : undefined
+      if (parsed) item.pin = parsed
+      else delete item.pin
+      persist(now)
+      return true
+    },
+
+    /**
+     * Removes our record. Returns the removed row (with its pin memory) so the
+     * caller can restore the pin, or null when nothing was stashed.
+     * @param {string} threadId
+     * @param {Date} [now]
+     * @returns {StashRow | null}
+     */
+    take(threadId, now = new Date()) {
+      const id = canonicalThreadId(threadId)
+      const item = state.items[id]
+      if (!item) return null
+      const row = copy(id, item)
+      delete state.items[id]
+      persist(now)
+      return row
+    },
+
+    /**
      * @param {string} threadId
      * @param {Date} [now]
      */
     unstash(threadId, now = new Date()) {
-      const id = canonicalThreadId(threadId)
-      if (!state.items[id]) return false
-      delete state.items[id]
-      persist(now)
-      return true
+      return this.take(threadId, now) !== null
     },
 
     /**

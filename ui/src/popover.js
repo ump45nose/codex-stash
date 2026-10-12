@@ -151,6 +151,8 @@ export function mountPopover(options) {
  *   zoom?: number,
  *   chrome?: MenuChrome | null,
  *   prefix?: string,
+ *   changeDateShortcut?: string | null,
+ *   removeShortcut?: string | null,
  *   onChangeDate?: () => void,
  *   onRemove?: () => void,
  *   onClose: () => void,
@@ -161,8 +163,8 @@ export function mountMenu(options) {
   const { doc, strings, chrome } = options
   const menu = frame(doc, prefix, 'menu', 'menu', chrome, null)
   const items = options.items ?? [
-    { id: 'change-date', label: strings.changeDate, run: () => options.onChangeDate?.() },
-    { id: 'remove', label: strings.remove, run: () => options.onRemove?.() },
+    { id: 'change-date', label: strings.changeDate, shortcut: options.changeDateShortcut ?? null, run: () => options.onChangeDate?.() },
+    { id: 'remove', label: strings.remove, shortcut: options.removeShortcut ?? null, run: () => options.onRemove?.() },
   ]
   for (const entry of items) {
     const el = item(doc, chrome, entry.label, entry.shortcut ?? null, entry.run, entry.checked)

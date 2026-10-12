@@ -163,6 +163,14 @@ export function createAdapter(doc, options = {}) {
     return { raw: null, source: null }
   }
 
+  function readCurrentTitle() {
+    const row = currentRow()
+    if (row) return rowTitle(row)
+    const title = doc.title?.replace(/\s+/g, ' ').trim()
+    if (!title || /^(ChatGPT|Codex)$/i.test(title)) return null
+    return title
+  }
+
   function probe() {
     const sidebar = findSidebar()
     const scroll = doc.querySelector(table.scroll)
@@ -384,6 +392,247 @@ export function createAdapter(doc, options = {}) {
     }
   }
 
+  /** Expand a collapsed native section for the duration of `fn`, then restore. */
+  async function withSectionOpen(key, fn, step = 50) {
+    const section = nativeSections().find((s) => sectionKey(s) === key)
+    const toggle = section?.querySelector(table.sectionToggle)
+    let opened = false
+    if (toggle && toggle.getAttribute('aria-expanded') === 'false') {
+      toggle.click()
+      opened = true
+      await sleep(step * 4)
+    }
+    try {
+      return await fn(section)
+    } finally {
+      if (opened && section?.isConnected) {
+        const again = section.querySelector(table.sectionToggle)
+        if (again?.getAttribute('aria-expanded') === 'true') again.click()
+      }
+    }
+  }
+
+  /**
+   * The Pinned list's own React props: `keys` (codex:thread:<id>, in display
+   * order) and `onOrderChange(nextKeys)`, the same handler a drag-drop calls.
+   * Only present while the section is expanded.
+   */
+  function pinnedListProps() {
+    const section = nativeSections().find((s) => sectionKey(s) === 'pinned')
+    const row = section?.querySelector(`[${table.threadIdAttr}]`)
+    if (!row) return null
+    const fiberKey = Object.keys(row).find((k) => k.startsWith('__reactFiber'))
+    for (let fiber = fiberKey ? row[fiberKey] : null, depth = 0; fiber && depth < 80; fiber = fiber.return, depth++) {
+      const props = fiber.memoizedProps
+      if (props && Array.isArray(props.keys) && typeof props.onOrderChange === 'function') return props
+    }
+    return null
+  }
+
+  function keyToId(key) {
+    const raw = String(key).replace(/^codex:thread:/, '')
+    return raw.startsWith('content-tab:') ? null : domThreadKey(raw)
+  }
+
+  /** Pinned thread ids in display order (expands the section briefly). */
+  async function pinnedOrder() {
+    return withSectionOpen('pinned', (section) => {
+      const props = pinnedListProps()
+      if (props) return props.keys.map(keyToId).filter(Boolean)
+      if (!section) return []
+      return [...section.querySelectorAll(`[${table.threadIdAttr}]`)]
+        .filter((r) => r.getAttribute(table.threadPinnedAttr) === 'true')
+        .map((r) => domThreadKey(r.getAttribute(table.threadIdAttr)))
+        .filter(Boolean)
+    })
+  }
+
+  /** Where `threadId` sits in 置顶: { index, beforeThreadId } or null. */
+  async function pinPosition(threadId) {
+    const id = domThreadKey(threadId)
+    const order = await pinnedOrder()
+    const index = order.indexOf(id)
+    if (index < 0) return null
+    return { index, beforeThreadId: order[index + 1] ?? null }
+  }
+
+  function pressPointer(element) {
+    const win = doc.defaultView
+    const Ctor = win?.PointerEvent ?? win?.MouseEvent
+    const init = { bubbles: true, cancelable: true, button: 0, pointerType: 'mouse', isPrimary: true }
+    element.dispatchEvent(new Ctor('pointerdown', init))
+  }
+
+  function pressEscape(target) {
+    const win = doc.defaultView
+    target?.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }))
+  }
+
+  /** Open a native Radix dropdown trigger and return its menu node. */
+  async function openNativeMenu(trigger, step = 50) {
+    pressPointer(trigger)
+    return waitFor(() => {
+      const id = trigger.getAttribute('aria-controls')
+      const menu = id ? doc.getElementById(id) : null
+      return menu && menu.getAttribute('role') === 'menu' ? menu : null
+    }, 800, step)
+  }
+
+  /** 'manual' | 'updated' | null — read from the native 置顶 header menu. */
+  async function pinnedSortMode() {
+    const section = nativeSections().find((s) => sectionKey(s) === 'pinned')
+    const trigger = section && [...section.querySelectorAll('button[aria-haspopup="menu"]')].find((b) => !b.closest(`[${table.threadIdAttr}]`))
+    if (!trigger) return null
+    const menu = await openNativeMenu(trigger)
+    if (!menu) return null
+    const checked = [...menu.querySelectorAll('[role="menuitemradio"][aria-checked="true"]')].map((i) => i.textContent.trim())
+    pressEscape(menu)
+    if (checked.some((t) => /手动|manual/i.test(t))) return 'manual'
+    if (checked.some((t) => /最近|updated|recent/i.test(t))) return 'updated'
+    return null
+  }
+
+  /** Pinned per Codex's own list (expands briefly); null when unreadable. */
+  async function pinnedNow(threadId) {
+    const id = domThreadKey(threadId)
+    const order = await pinnedOrder()
+    return order.includes(id)
+  }
+
+  /**
+   * Open a thread by id through Codex's command menu (搜索): results carry
+   * data-value="command-menu-async-result:<id>", so the match is by id, not
+   * by title. `query` only narrows the search.
+   */
+  async function openViaSearch(threadId, query, step = 50) {
+    const id = domThreadKey(threadId)
+    const button = doc.querySelector(table.searchButton)
+    if (!button || !id || !query) return false
+    button.click()
+    const input = await waitFor(() => {
+      const el = doc.activeElement
+      return el && el.tagName === 'INPUT' && el.closest('[cmdk-root], [role="dialog"]') ? el : null
+    }, 800, step)
+    if (!input) return false
+    const win = doc.defaultView
+    const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value')?.set
+    setter ? setter.call(input, query) : (input.value = query)
+    input.dispatchEvent(new win.Event('input', { bubbles: true }))
+    const option = await waitFor(
+      () => [...doc.querySelectorAll('[cmdk-item][data-value]')].find((o) => domThreadKey(o.getAttribute('data-value').replace(/^command-menu-async-result:/, '')) === id) ?? null,
+      3000,
+      step,
+    )
+    if (!option) {
+      pressEscape(input)
+      return false
+    }
+    option.click()
+    return Boolean(await waitFor(() => currentId() === id, 2000, step))
+  }
+
+  function currentId() {
+    const raw = readCurrentThread().raw
+    return raw ? domThreadKey(raw) : null
+  }
+
+  /** 聊天操作 (header) → 置顶 for the open thread. */
+  async function pinOpenThreadViaHeader(step = 50) {
+    const trigger = doc.querySelector(table.threadActionsButton)
+    if (!trigger) return false
+    const menu = await openNativeMenu(trigger, step)
+    if (!menu) return false
+    const item = [...menu.querySelectorAll('[role^="menuitem"]')].find((i) => /^\s*(置顶|Pin)(?!.*(取消|Unpin))/i.test(i.textContent || ''))
+    if (!item) {
+      pressEscape(menu)
+      return false
+    }
+    item.click()
+    return true
+  }
+
+  /**
+   * Re-pin through Codex's own controls, by thread id, and optionally restore
+   * its place in a manually sorted 置顶 via the list's own onOrderChange.
+   * 1. Row rendered anywhere (collapsed sections expanded briefly) → its pin pill.
+   * 2. Otherwise open the thread via 搜索 (matched by id), 聊天操作 → 置顶,
+   *    then return to the previously open thread.
+   * @param {string} threadId
+   * @param {{ title?: string, index?: number | null, beforeThreadId?: string | null, returnTitle?: string | null, waitMs?: number, step?: number }} [opts]
+   */
+  async function repinThread(threadId, opts = {}) {
+    const { waitMs = 2000, step = 50 } = opts
+    const id = domThreadKey(threadId)
+    if (!id) return { ok: false, reason: 'invalid-id' }
+    let via = 'already'
+    if (!(await pinnedNow(id))) {
+      via = null
+      const viaPill = async () => {
+        const row = rowsFor(id)[0]
+        const pill = row && pinPill(row)
+        if (!pill) return false
+        pill.click()
+        return true
+      }
+      if (await viaPill()) via = 'row'
+      else {
+        for (const section of nativeSections()) {
+          const key = sectionKey(section)
+          if (!key || key === 'pinned') continue
+          if (await withSectionOpen(key, () => viaPill(), step)) {
+            via = 'row'
+            break
+          }
+        }
+      }
+      if (!via) {
+        const previous = currentId()
+        const previousTitle = opts.returnTitle ?? readCurrentTitle()
+        if (previous !== id && !(await openViaSearch(id, opts.title, step))) return { ok: false, reason: 'not-reachable' }
+        if (!(await pinOpenThreadViaHeader(step))) return { ok: false, reason: 'no-pin-control' }
+        via = 'header'
+        await waitFor(() => isPinned(id) === true, 600, step)
+        if (previous && previous !== id) {
+          const back = await openThread(previous)
+          if (!back?.ok) await openViaSearch(previous, previousTitle, step)
+        }
+      }
+      let confirmed = false
+      for (let waited = 0; waited <= waitMs && !confirmed; waited += step * 6) {
+        confirmed = await pinnedNow(id)
+        if (!confirmed) await sleep(step * 6)
+      }
+      if (!confirmed) return { ok: false, via, reason: 'not-pinned' }
+    }
+    const position = await restorePinPosition(id, opts)
+    return { ok: true, via, position }
+  }
+
+  /** Move `id` back to its remembered slot when 置顶 is manually sorted. */
+  async function restorePinPosition(id, { index = null, beforeThreadId = null } = {}) {
+    if (index == null && !beforeThreadId) return { restored: false, reason: 'no-memory' }
+    return withSectionOpen('pinned', async () => {
+      const mode = await pinnedSortMode()
+      if (mode !== 'manual') return { restored: false, reason: `sort-${mode ?? 'unknown'}` }
+      const props = pinnedListProps()
+      if (!props) return { restored: false, reason: 'no-reorder-api' }
+      const keys = props.keys.slice()
+      const mine = keys.findIndex((k) => keyToId(k) === id)
+      if (mine < 0) return { restored: false, reason: 'not-in-list' }
+      const [key] = keys.splice(mine, 1)
+      const before = beforeThreadId ? keys.findIndex((k) => keyToId(k) === domThreadKey(beforeThreadId)) : -1
+      const target = before >= 0 ? before : Math.min(index ?? keys.length, keys.length)
+      keys.splice(target, 0, key)
+      if (keys.every((k, i) => k === props.keys[i])) return { restored: true, index: target, moved: false }
+      props.onOrderChange(keys)
+      const ok = await waitFor(() => {
+        const now = pinnedListProps()
+        return now && now.keys.findIndex((k) => keyToId(k) === id) === target
+      }, 1500, 50)
+      return ok ? { restored: true, index: target, moved: true } : { restored: false, reason: 'order-not-saved' }
+    })
+  }
+
   /** Rendered native rows that can host a 收纳 hover button. */
   function rowActionSlots() {
     const slots = []
@@ -572,13 +821,7 @@ export function createAdapter(doc, options = {}) {
      * The renderer document.title is the open thread's title in live builds.
      * Used for display only, never to derive an id.
      */
-    readCurrentTitle() {
-      const row = currentRow()
-      if (row) return rowTitle(row)
-      const title = doc.title?.replace(/\s+/g, ' ').trim()
-      if (!title || /^(ChatGPT|Codex)$/i.test(title)) return null
-      return title
-    },
+    readCurrentTitle,
     getThreadTitle(threadId) {
       const row = findRow(threadId)
       return row ? rowTitle(row) : null
@@ -596,6 +839,9 @@ export function createAdapter(doc, options = {}) {
     tooltipClass: () => NATIVE_TOOLTIP_CLASS,
     isPinned,
     unpinThread,
+    repinThread,
+    pinPosition,
+    pinnedOrder,
     mountPoint,
     onUserMessage,
     observe,

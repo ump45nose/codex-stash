@@ -50,7 +50,7 @@ export function parseState(raw) {
       dropped += 1
       continue
     }
-    state.items[threadId] = { title: item.title, dueAt, stashedAt }
+    state.items[threadId] = { title: item.title, dueAt, stashedAt, ...parsePin(item.pin) }
   }
   return { state, dropped }
 }
@@ -73,4 +73,24 @@ export function stateTime(state) {
  */
 export function chooseNewer(left, right) {
   return stateTime(right) > stateTime(left) ? right : left
+}
+
+/**
+ * Pin memory: was the chat pinned when stashed, and where in 置顶.
+ * @param {unknown} raw
+ * @returns {{ pin?: { wasPinned: true, index: number | null, beforeThreadId: string | null } }}
+ */
+export function parsePin(raw) {
+  if (!raw || typeof raw !== 'object' || /** @type {any} */ (raw).wasPinned !== true) return {}
+  const value = /** @type {any} */ (raw)
+  const index = Number.isInteger(value.index) && value.index >= 0 ? value.index : null
+  let beforeThreadId = null
+  if (typeof value.beforeThreadId === 'string') {
+    try {
+      beforeThreadId = canonicalThreadId(value.beforeThreadId)
+    } catch {
+      beforeThreadId = null
+    }
+  }
+  return { pin: { wasPinned: true, index, beforeThreadId } }
 }

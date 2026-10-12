@@ -158,3 +158,22 @@ A CodexHost build that drops `data-app-action-sidebar-thread-id` without a repla
 - `data-app-action-sidebar-thread-pinned="true"` on pinned rows. Stashing calls `unpinThread(id)`, which clicks that row's native pin pill (`取消置顶聊天`). If 置顶 is collapsed it expands it first and collapses it again afterwards. It then waits until no row for the id reports `pinned="true"`.
 - Each pill is wrapped in a Radix tooltip trigger `<span data-state class="contents">`. Anything placed inside that span shows the pill's tooltip, so the 收纳 button sits outside it with its own tooltip (`NATIVE_TOOLTIP_CLASS`).
 - Native section "..." menus: 置顶 offers radio items 最近更新 / 手动排序. 项目 and 最近 have 整理侧边栏 and a 聊天排序方式 submenu. The stash header mirrors 置顶 with radio items 按到期日期 / 按收纳时间 / 按标题.
+
+## Re-pin and pinned order (round 4, captured live 2026-10-12)
+
+- `searchButton`: `button[aria-label="搜索"], button[aria-label="Search"]` opens Codex's
+  command menu (cmdk). Chat results carry
+  `data-value="command-menu-async-result:local:<uuid>"`, so a thread is opened
+  **by id** even when its sidebar row is not rendered (e.g. an unpinned chat in
+  a collapsed project). The typed text (cached title) only narrows results.
+- `threadActionsButton`: `button[aria-label="聊天操作"], button[aria-label="Thread actions"]`
+  is the open thread's header menu (Radix; opens on `pointerdown`). Its
+  `置顶` / `Pin` item pins the open thread.
+- The 置顶 header trigger (`aria-label="置顶选项"`, `aria-haspopup="menu"`)
+  holds radios `最近更新` / `手动排序`; `aria-checked` tells the sort mode.
+- The rendered Pinned list's React props expose `keys`
+  (`codex:thread:local:<uuid>`, display order) and `onOrderChange(nextKeys)`,
+  the same handler the native drag-drop calls. Only used in 手动排序 mode, to
+  put a re-pinned chat back where it was. Absent → position is reported, not forced.
+- Re-pin order of preference: rendered row pin pill (sections expanded briefly) →
+  搜索 by id + 聊天操作 → 置顶, then return to the previously open thread.
