@@ -15,6 +15,11 @@ export const STRINGS = {
     draft: '这个会话还没有稳定的 thread id，发送第一条消息后再收纳。',
     noThread: '当前没有可收纳的会话。',
     stashCurrent: '收纳当前会话',
+    stash: '收纳',
+    options: '选项',
+    stashThis: '收纳会话',
+    expandAll: '展开',
+    collapseAll: '折叠',
   },
   en: {
     section: 'Stash',
@@ -30,5 +35,10 @@ export const STRINGS = {
     draft: 'This conversation has no stable thread id yet. Send a message first, then stash it.',
     noThread: 'There is no conversation to stash.',
     stashCurrent: 'Stash current conversation',
+    stash: 'Stash',
+    options: 'Options',
+    stashThis: 'Stash conversation',
+    expandAll: 'Expand',
+    collapseAll: 'Collapse',
   },
 }

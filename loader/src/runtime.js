@@ -15,11 +15,12 @@ import {
   formatDueLabel,
   mountMenu,
   mountPopover,
+  mountRowActions,
   mountSection,
   unmountAddonNodes,
 } from '../../ui/src/index.js'
 import { createDisposers } from './disposers.js'
-import { hotkeyConflict, matchHotkey, parseHotkey } from './hotkey.js'
+import { hotkeyConflict, hotkeyLabel, matchHotkey, parseHotkey } from './hotkey.js'
 import { planReminders } from './reminders.js'
 import { GUARD, VERSION } from './version.js'
 
@@ -92,6 +93,7 @@ export function install(options = {}) {
     ...(Array.isArray(win.__codexHostReservedHotkeys) ? win.__codexHostReservedHotkeys : []),
   ]
   const conflict = hotkeyConflict(hotkey, reserved)
+  const shortcut = hotkeyLabel(hotkey, isMac)
   let hotkeyBound = false
   let disabled = null
   let warned = false
@@ -203,10 +205,24 @@ export function install(options = {}) {
           if (!result?.ok) log?.info?.('[codex-stash] thread not found in sidebar', threadId)
         })
       },
-      onContext(threadId, x, y) {
-        openMenu(threadId, x, y)
+      onContext(threadId, x, y, rect) {
+        openMenu(threadId, rect ?? { left: x, top: y, bottom: y })
+      },
+      onSectionMenu(rect) {
+        openSectionMenu(rect)
       },
     })
+    if (adapter.rowActionSlots) {
+      mountRowActions({
+        doc,
+        prefix: NODE_PREFIX,
+        slots: adapter.rowActionSlots(),
+        label: `${strings.stash} (${shortcut})`,
+        onStash(threadId, rect) {
+          openStashPopover(null, { threadId, anchor: rect })
+        },
+      })
+    }
     checkDue(now)
   }
 
@@ -226,7 +242,18 @@ export function install(options = {}) {
     render()
   }
 
-  function openStashPopover(editThreadId) {
+  function floatingContext() {
+    return {
+      zoom: adapter.uiZoom?.() ?? 1,
+      chrome: adapter.menuChrome?.() ?? null,
+    }
+  }
+
+  /**
+   * @param {string | null} editThreadId
+   * @param {{ threadId?: string, anchor?: any }} [target] a specific native row
+   */
+  function openStashPopover(editThreadId, target = {}) {
     closeTransient()
     const health = adapter.probe()
     if (health.status === 'broken') {
@@ -235,23 +262,30 @@ export function install(options = {}) {
     }
     let message = null
     let threadId = editThreadId
-    if (!editThreadId) {
+    let subject = null
+    if (!editThreadId && target.threadId) {
+      threadId = target.threadId
+      subject = adapter.getThreadTitle(threadId)
+    } else if (!editThreadId) {
       const current = currentThread()
       if (!current.ok && current.reason === 'not-persisted') message = strings.draft
       else if (!current.ok) message = strings.noThread
       else threadId = current.id
     }
-    const currentTitle = editThreadId ? null : adapter.readCurrentTitle?.() ?? null
-    const toggle = doc.getElementById(`${NODE_PREFIX}toggle`)
-    const rect = toggle?.getBoundingClientRect?.()
+    const currentTitle = editThreadId || target.threadId ? subject : adapter.readCurrentTitle?.() ?? null
+    if (editThreadId) subject = store.get(editThreadId)?.title ?? null
+    else if (!subject) subject = currentTitle
     popover = mountPopover({
       doc,
       strings,
       message,
-      hotkeyLabel: hotkey.spec,
+      title: subject,
+      heading: target.threadId ? strings.stashThis : null,
+      hotkeyLabel: shortcut,
       editing: Boolean(editThreadId),
-      left: rect ? rect.left : 16,
-      top: rect ? rect.bottom + 4 : 72,
+      // Hotkey: centred. Row / menu: anchored, flipped and clamped on screen.
+      anchor: target.anchor ?? null,
+      ...floatingContext(),
       onPreset(preset) {
         if (!threadId) return
         commit(threadId, dueAtFromPreset(preset, clock()), Boolean(editThreadId), currentTitle)
@@ -266,15 +300,41 @@ export function install(options = {}) {
     })
   }
 
-  function openMenu(threadId, x, y) {
+  function openSectionMenu(anchor) {
     closeTransient()
     menu = mountMenu({
       doc,
       strings,
-      left: x,
-      top: y,
+      anchor,
+      ...floatingContext(),
+      items: [
+        { id: 'stash-current', label: strings.stashCurrent, shortcut, run: () => openStashPopover(null, { anchor }) },
+        {
+          id: 'toggle',
+          label: collapsed ? strings.expandAll : strings.collapseAll,
+          run() {
+            closeTransient()
+            collapsed = !collapsed
+            writeCollapsed(win, collapsed)
+            render()
+          },
+        },
+      ],
+      onClose() {
+        menu = null
+      },
+    })
+  }
+
+  function openMenu(threadId, anchor) {
+    closeTransient()
+    menu = mountMenu({
+      doc,
+      strings,
+      anchor,
+      ...floatingContext(),
       onChangeDate() {
-        openStashPopover(threadId)
+        openStashPopover(threadId, { anchor })
       },
       onRemove() {
         store.unstash(threadId, clock())
@@ -305,8 +365,19 @@ export function install(options = {}) {
       closeTransient()
       return
     }
-    openStashPopover(null)
+    // A hovered native row is the target; otherwise the open conversation.
+    const hovered = hoveredRow && hoveredRow.isConnected ? adapter.threadIdFromNode?.(hoveredRow) : null
+    if (hovered) openStashPopover(null, { threadId: hovered, anchor: hoveredRow.getBoundingClientRect() })
+    else openStashPopover(null)
   }
+
+  let hoveredRow = null
+  function onPointerOver(event) {
+    const id = adapter.threadIdFromNode?.(event.target)
+    hoveredRow = id ? event.target.closest?.('[data-app-action-sidebar-thread-id]') ?? null : null
+  }
+  doc.addEventListener('pointerover', onPointerOver, true)
+  disposers.add(() => doc.removeEventListener('pointerover', onPointerOver, true))
 
   if (conflict) {
     log?.warn?.('[codex-stash] hotkey not bound', conflict)

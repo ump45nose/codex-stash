@@ -74,6 +74,7 @@ Our own section never sets `data-app-action-sidebar-section`, so Codex's React t
 | Active row | `[data-app-action-sidebar-thread-active="true"]` |
 | Selected row (attr) | `[data-app-action-sidebar-thread-selected="true"]` |
 | Title | `data-app-action-sidebar-thread-title` |
+| Row hover pill (pin / archive), host for the 收纳 button | `[class*="group-hover:opacity-100"] button[data-pill]` |
 | Current row | `[aria-current="page"]` |
 | Selected row | `[aria-selected="true"]` |
 | Pin state, read-only | `data-app-action-sidebar-thread-pinned` |
@@ -142,3 +143,11 @@ A CodexHost build that drops `data-app-action-sidebar-thread-id` without a repla
 - Explodex `docs/codex-architecture.md` (no license — attribute names only, no code copied)
 - Codex App HUD `src/injector/README.md` (MIT) — active thread probe and `local:` prefix
 - Codexion `docs/EXTENSIONS.md` (MIT) — locator order and fail-closed disable
+
+## Native menus, header "..." and zoom (live, 2026-10-12)
+
+- **Thread right-click menu is an OS-native Electron menu.** Rows call the preload bridge `window.electronBridge.showContextMenu`, which is a frozen `contextBridge` object (non-writable, non-configurable). A renderer addon cannot add an item to it without patching the app. Instead the adapter exposes `rowActionSlots()`: the 收纳 button is prepended to the row's hover pill group (next to 置顶聊天 / 归档聊天), copying the pill's classes and `data-*` attributes.
+- **Section header "..."** is `button[aria-haspopup="menu"]` inside `actions > reveal` on the title row. The reveal wrapper uses `group-hover/nav-section-title:*` classes, so copying the wrapper classes gives native hover behaviour. The button's classes, `data-color/variant/squircle/uniform/size` and its dots `<svg>` are copied.
+- **Dropdown menu chrome** (Radix, opened from a header "..."): `NATIVE_MENU_CHROME` in `src/adapter.js` keeps the content/item/row class strings. Unknown classes fall back to zero-specificity `:where()` styles.
+- **Zoom.** The page surface `._PageSurface…` carries `zoom: 1.5` (UI scale). Floating nodes are appended to `body`, so `uiZoom()` multiplies computed `zoom` up from the sidebar and the popover applies the same zoom, dividing `left/top` by it.
+- **Hotkeys.** Codex's keybinding registry in `app.asar` maps `CmdOrCtrl+Shift+S` to `toggleSidebar`. ⌘⌥S, ⌘⇧B and ⌘⇧U are also handled before us. `CmdOrCtrl+Shift+H` is not in the registry.

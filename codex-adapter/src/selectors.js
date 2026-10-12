@@ -34,6 +34,7 @@ export const SELECTOR_TABLE = {
   threadTitleAttr: 'data-app-action-sidebar-thread-title',
   threadActive: '[data-app-action-sidebar-thread-active="true"]',
   threadSelected: '[data-app-action-sidebar-thread-selected="true"]',
+  rowHoverActions: '[class*="group-hover:opacity-100"] button[data-pill]',
   threadPinnedAttr: 'data-app-action-sidebar-thread-pinned',
   projectIdAttr: 'data-app-action-sidebar-project-id',
   projectRow: '[data-app-action-sidebar-project-row]',

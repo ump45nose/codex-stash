@@ -91,7 +91,14 @@ export async function service(action, deps = {}) {
     paths.plist,
     launchAgentPlist({ node: deps.node ?? defaultNodePath(), script: binScriptPath(), logDir: paths.logDir, env: deps.env }),
   )
-  const result = await run(['bootstrap', domain, paths.plist])
+  // bootout returns before the old job is fully gone; bootstrap then fails
+  // with EIO (5). Retry briefly.
+  let result
+  for (let attempt = 0; attempt < (deps.retries ?? 6); attempt += 1) {
+    result = await run(['bootstrap', domain, paths.plist])
+    if (result.code === 0) break
+    await new Promise((resolve) => setTimeout(resolve, deps.retryDelayMs ?? 500))
+  }
   if (result.code !== 0) throw new Error(`launchctl bootstrap failed: ${result.stderr || result.code}`)
   return { plist: paths.plist, logDir: paths.logDir, loaded: true }
 }

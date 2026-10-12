@@ -5,6 +5,19 @@ import { domThreadKey, isSendButton, isSendKey, readRouteThreadId } from './dom-
  * @param {Document} doc
  * @param {{ selectorTable?: typeof SELECTOR_TABLE, ignoreIdPrefix?: string | null }} [options]
  */
+/**
+ * Class strings of Codex's Radix dropdown menu (captured live 2026-10-12, see
+ * SELECTORS.md). Presentation only; the menu itself is our own node.
+ */
+export const NATIVE_MENU_CHROME = {
+  contentClass:
+    'no-drag z-50 m-px flex select-none flex-col overflow-y-auto bg-surface-elevated-secondary/90 text-default ring-(--color-border-overlay) ring-(length:--dropdown-overlay-ring-width) shadow-(--shadow-dropdown-overlay) backdrop-blur-sm rounded-2xl p-[var(--app-menu-gutter,var(--spacing))] min-w-[var(--app-menu-min-width,220px)]',
+  itemClass: 'no-drag _itemBase_14z1j_2 rounded-xl text-default group _itemInteractive_14z1j_2 flex flex-col',
+  rowClass: 'flex w-full min-w-0 items-center gap-[var(--spacing-menu-item-content,calc(var(--spacing)*1.5))]',
+  labelClass: 'text-tertiary',
+  separatorClass: '',
+}
+
 export function createAdapter(doc, options = {}) {
   const table = options.selectorTable ?? SELECTOR_TABLE
   const ignoreIdPrefix = options.ignoreIdPrefix ?? null
@@ -224,6 +237,29 @@ export function createAdapter(doc, options = {}) {
     }
     const inner = section.firstElementChild
     const chevron = toggle?.querySelector('svg')
+    // Right side of the native header: wrapper > hover-reveal > "..." button.
+    let headerActionsClass = ''
+    let headerRevealClass = ''
+    let headerButton = null
+    let dotsSvg = ''
+    if (heading) {
+      const menuButton = [...heading.querySelectorAll('button[aria-haspopup="menu"]')].find((b) => b !== toggle)
+      if (menuButton) {
+        const reveal = menuButton.parentElement
+        const actions = reveal?.parentElement
+        if (actions && actions.parentElement === heading) {
+          headerActionsClass = actions.className
+          headerRevealClass = reveal.className
+        }
+        headerButton = donorButton(menuButton)
+        dotsSvg = menuButton.querySelector('svg')?.outerHTML || ''
+      }
+    }
+    lastHeaderChrome = headerButton
+      ? { headerActionsClass, headerRevealClass, headerButton, dotsSvg }
+      : lastHeaderChrome
+    const pill = firstRowPill()
+    if (pill) lastRowButton = donorButton(pill)
     const row = firstNative(table.threadRow) || firstNative(`[${table.threadIdAttr}]`)
     return {
       sectionTag: section.tagName.toLowerCase(),
@@ -237,7 +273,69 @@ export function createAdapter(doc, options = {}) {
       toggleClass: toggle?.className || '',
       rowTag: (row?.tagName || 'BUTTON').toLowerCase(),
       rowClass: (lastRowClass = row?.className || lastRowClass),
+      ...(lastHeaderChrome ?? {}),
+      rowButton: lastRowButton,
     }
+  }
+
+  let lastHeaderChrome = null
+  let lastRowButton = null
+  const DONOR_ATTRS = ['data-color', 'data-variant', 'data-squircle', 'data-uniform', 'data-size', 'data-pill']
+
+  function donorButton(button) {
+    const attrs = {}
+    for (const name of DONOR_ATTRS) {
+      if (button.hasAttribute(name)) attrs[name] = button.getAttribute(name)
+    }
+    return { className: button.className, attrs, innerClass: button.firstElementChild?.tagName === 'SPAN' ? button.firstElementChild.className : '' }
+  }
+
+  /** Native row hover-action container (holds pin / archive pills). */
+  function rowActionContainer(row) {
+    const pill = row.querySelector(table.rowHoverActions)
+    return pill?.parentElement ?? null
+  }
+
+  function firstRowPill() {
+    for (const row of threadNodes()) {
+      const pill = row.querySelector(table.rowHoverActions)
+      if (pill) return pill
+    }
+    return null
+  }
+
+  /** Rendered native rows that can host a 收纳 hover button. */
+  function rowActionSlots() {
+    const slots = []
+    for (const row of threadNodes()) {
+      const key = domThreadKey(row.getAttribute(table.threadIdAttr))
+      if (!key) continue
+      const container = rowActionContainer(row)
+      const pill = container?.querySelector(table.rowHoverActions)
+      if (!container || !pill) continue
+      const donor = donorButton(pill)
+      slots.push({ threadId: key, container, buttonClass: donor.className, buttonAttrs: donor.attrs, innerClass: donor.innerClass })
+    }
+    return slots
+  }
+
+  /** Stable id of the native row containing `node`, or null. */
+  function threadIdFromNode(node) {
+    const element = node?.nodeType === 1 ? node : node?.parentElement
+    if (!element || isOurNode(element)) return null
+    const row = element.closest?.(`[${table.threadIdAttr}]`)
+    return row ? domThreadKey(row.getAttribute(table.threadIdAttr)) : null
+  }
+
+  /** Product of CSS zoom from the sidebar up (live builds zoom the page surface). */
+  function uiZoom() {
+    const win = doc.defaultView
+    let zoom = 1
+    for (let node = findSidebar(); node && node.nodeType === 1; node = node.parentElement) {
+      const value = Number.parseFloat(win?.getComputedStyle?.(node)?.zoom || '1')
+      if (Number.isFinite(value) && value > 0) zoom *= value
+    }
+    return zoom
   }
 
   function mountPoint() {
@@ -411,6 +509,10 @@ export function createAdapter(doc, options = {}) {
     openThread,
     readChrome,
     sectionKey,
+    rowActionSlots,
+    threadIdFromNode,
+    uiZoom,
+    menuChrome: () => NATIVE_MENU_CHROME,
     mountPoint,
     onUserMessage,
     observe,

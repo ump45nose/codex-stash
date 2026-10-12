@@ -116,7 +116,7 @@ test('install is idempotent, stashes by id, opens the row, and uninstalls cleanl
 
   row.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 12, clientY: 20 }))
   const menu = window.document.getElementById('codex-stash-v1-menu')
-  ;[...menu.querySelectorAll('button')].find((button) => button.textContent === '移出').click()
+  ;[...menu.querySelectorAll('[role=menuitem]')].find((button) => button.textContent === '移出').click()
   assert.equal(window.document.querySelector('.codex-stash-v1-row'), null)
 
   pressStash(window)
@@ -193,7 +193,7 @@ test('changing the date keeps the thread and a due reminder notifies once', () =
   window.document.querySelector('[data-preset="tomorrow"]').click()
   const row = window.document.querySelector('.codex-stash-v1-row')
   row.dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 8, clientY: 8 }))
-  ;[...window.document.querySelectorAll('#codex-stash-v1-menu button')].find((button) => button.textContent === '改日期').click()
+  ;[...window.document.querySelectorAll('#codex-stash-v1-menu [role=menuitem]')].find((button) => button.textContent === '改日期').click()
   window.document.querySelector('[data-preset="nextMonday"]').click()
   assert.equal(window.document.querySelectorAll('.codex-stash-v1-row').length, 1)
 
@@ -297,5 +297,81 @@ test('a hotkey the host already handled is skipped and warned once', () => {
   assert.equal(warnings.filter((w) => /already handled/.test(w)).length, 1)
   pressStash(window)
   assert.ok(window.document.getElementById('codex-stash-v1-popover'))
+  uninstall({ window })
+})
+
+function addNativeRow(window, id, title) {
+  const scroll = window.document.querySelector('[data-app-action-sidebar-scroll]')
+  scroll.insertAdjacentHTML(
+    'beforeend',
+    `<div class="group native-row" data-app-action-sidebar-thread-row data-app-action-sidebar-thread-id="local:${id}"
+       data-app-action-sidebar-thread-title="${title}" role="button">${title}
+       <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100">
+         <button type="button" class="pill" data-pill="" data-size="3xs" aria-label="置顶聊天">pin</button>
+         <button type="button" class="pill" data-pill="" data-size="3xs" aria-label="归档聊天">archive</button>
+       </div></div>`,
+  )
+  return scroll.lastElementChild
+}
+
+test('native rows get a 收纳 hover button that stashes that row by id, with the shortcut hint', () => {
+  const { window } = page()
+  const row = addNativeRow(window, OTHER, 'Other thread')
+  let navigated = 0
+  row.addEventListener('click', () => (navigated += 1))
+  install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} } })
+  const button = row.querySelector('[id^="codex-stash-v1-act-"]')
+  assert.ok(button, 'stash button injected into the native hover group')
+  assert.equal(button.className, 'pill')
+  assert.equal(button.getAttribute('data-pill'), '')
+  assert.match(button.getAttribute('aria-label'), /收纳 \(⇧⌘H\)/)
+  button.click()
+  assert.equal(navigated, 0, 'clicking the action does not open the row')
+  const pop = window.document.getElementById('codex-stash-v1-popover')
+  assert.match(pop.textContent, /^收纳会话 \(⇧⌘H\)Other thread/)
+  pop.querySelector('[data-preset="tomorrow"]').click()
+  const stashed = [...window.document.querySelectorAll('.codex-stash-v1-row')].map((r) => r.getAttribute('data-codex-stash-thread-id'))
+  assert.deepEqual(stashed, [OTHER])
+  uninstall({ window })
+  assert.equal(window.document.querySelector('[id^="codex-stash-v1-"]'), null)
+})
+
+test('the hotkey targets a hovered native row, otherwise the open conversation', () => {
+  const { window } = page()
+  const row = addNativeRow(window, OTHER, 'Hovered thread')
+  install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} } })
+  row.dispatchEvent(new window.MouseEvent('pointerover', { bubbles: true }))
+  pressStash(window)
+  assert.match(window.document.getElementById('codex-stash-v1-popover').textContent, /Hovered thread/)
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  window.document.body.dispatchEvent(new window.MouseEvent('pointerover', { bubbles: true }))
+  pressStash(window)
+  window.document.querySelector('[data-preset="in3days"]').click()
+  const ids = [...window.document.querySelectorAll('.codex-stash-v1-row')].map((r) => r.getAttribute('data-codex-stash-thread-id')).sort()
+  assert.deepEqual(ids, [UUID, OTHER].sort())
+  uninstall({ window })
+})
+
+test('section header "..." opens a menu; collapse is applied in place for animation', () => {
+  const { window } = page()
+  install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} } })
+  pressStash(window)
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  const section = window.document.getElementById('codex-stash-v1-section')
+  const wrap = window.document.getElementById('codex-stash-v1-rows-wrap')
+  window.document.getElementById('codex-stash-v1-section-more').click()
+  const menu = window.document.getElementById('codex-stash-v1-menu')
+  const items = [...menu.querySelectorAll('[role=menuitem]')]
+  assert.match(items[0].textContent, /收纳当前会话.*⇧⌘H/)
+  items[1].click()
+  assert.equal(window.document.getElementById('codex-stash-v1-section'), section, 'same node, not rebuilt')
+  assert.equal(window.document.getElementById('codex-stash-v1-rows-wrap'), wrap)
+  assert.equal(wrap.getAttribute('data-collapsed'), 'true')
+  window.document.getElementById('codex-stash-v1-toggle').click()
+  assert.equal(wrap.getAttribute('data-collapsed'), 'false')
+  // Row "..." opens the same menu as right-click.
+  window.document.querySelector('.codex-stash-v1-row-more').click()
+  const labels = [...window.document.querySelectorAll('#codex-stash-v1-menu [role=menuitem]')].map((i) => i.textContent)
+  assert.deepEqual(labels, ['改日期', '移出'])
   uninstall({ window })
 })

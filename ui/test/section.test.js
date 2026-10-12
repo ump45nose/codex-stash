@@ -82,7 +82,10 @@ test('collapsed section hides rows and a missing row does not open', () => {
     },
     onContext() {},
   })
-  assert.equal(doc.getElementById('codex-stash-v1-rows'), null)
+  assert.equal(doc.getElementById('codex-stash-v1-rows-wrap').getAttribute('data-collapsed'), 'true')
+  assert.equal(doc.getElementById('codex-stash-v1-rows-wrap').getAttribute('aria-hidden'), 'true')
+  const svgClass = doc.querySelector('#codex-stash-v1-toggle svg')?.getAttribute('class') ?? '-rotate-90'
+  assert.doesNotMatch(svgClass, /(^| )rotate-0/)
   assert.equal(doc.getElementById('codex-stash-v1-toggle').getAttribute('aria-expanded'), 'false')
   doc.getElementById('codex-stash-v1-toggle').click()
   assert.equal(toggled, 1)
@@ -106,9 +109,9 @@ test('context actions are change-date and remove', () => {
     },
     onClose() {},
   })
-  const labels = [...menu.node.querySelectorAll('button')].map((button) => button.textContent)
+  const labels = [...menu.node.querySelectorAll('[role=menuitem]')].map((item) => item.textContent)
   assert.deepEqual(labels, ['改日期', '移出'])
-  menu.node.querySelector('button').click()
+  menu.node.querySelector('[role=menuitem]').click()
   assert.equal(changed, 1)
   menu.close()
   assert.equal(removed, 0)
@@ -154,4 +157,25 @@ test('change-date popover is titled 改日期, not 收纳当前会话', async ()
   const doc = new JSDOM('<!doctype html><body></body>').window.document
   const pop = mountPopover({ doc, left: 0, top: 0, strings: STRINGS.zh, editing: true, hotkeyLabel: 'Mod+Shift+H', onPreset() {}, onCustom() {}, onClose() {} })
   assert.ok(pop); assert.match(doc.getElementById('codex-stash-v1-popover').textContent, /^改日期/)
+})
+
+test('floating placement flips above, clamps to the viewport, and centres for the hotkey', async () => {
+  const { computePlacement } = await import('../src/floating.js')
+  const vw = 1000
+  const vh = 800
+  const size = { width: 240, height: 300, vw, vh, margin: 8 }
+  // Anchor near the bottom (many pinned rows push the section down): flip up.
+  const flip = computePlacement({ ...size, anchor: { left: 100, top: 700, bottom: 720 } })
+  assert.equal(flip.side, 'top')
+  assert.ok(flip.top >= 8 && flip.top + 300 <= vh - 8)
+  // No room either way: clamp fully on screen.
+  const tight = computePlacement({ ...size, height: 700, anchor: { left: 990, top: 400, bottom: 420 } })
+  assert.equal(tight.side, 'clamped')
+  assert.ok(tight.top + 700 <= vh - 8 && tight.left + 240 <= vw - 8)
+  // Below the viewport entirely (section scrolled away): still visible.
+  const off = computePlacement({ ...size, anchor: { left: 50, top: 2000, bottom: 2020 } })
+  assert.ok(off.top >= 8 && off.top + 300 <= vh - 8)
+  const centre = computePlacement({ ...size, anchor: null })
+  assert.equal(centre.side, 'center')
+  assert.equal(centre.left, 380)
 })

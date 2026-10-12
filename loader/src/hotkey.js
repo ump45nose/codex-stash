@@ -69,3 +69,14 @@ export function hotkeyConflict(hotkey, extraSpecs = []) {
 export function sameHotkey(left, right) {
   return left.key === right.key && left.mod === right.mod && left.shift === right.shift && left.alt === right.alt
 }
+
+/**
+ * Native-style shortcut label, e.g. ⇧⌘H on macOS, Ctrl+Shift+H elsewhere.
+ * @param {Hotkey} hotkey
+ * @param {boolean} isMac
+ */
+export function hotkeyLabel(hotkey, isMac) {
+  const key = hotkey.key.length === 1 ? hotkey.key.toUpperCase() : hotkey.key[0].toUpperCase() + hotkey.key.slice(1)
+  if (isMac) return `${hotkey.alt ? '⌥' : ''}${hotkey.shift ? '⇧' : ''}${hotkey.mod ? '⌘' : ''}${key}`
+  return [hotkey.mod && 'Ctrl', hotkey.alt && 'Alt', hotkey.shift && 'Shift', key].filter(Boolean).join('+')
+}

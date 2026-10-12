@@ -159,3 +159,18 @@ test('LaunchAgent plist runs watch with absolute node, RunAtLoad and KeepAlive',
   await service('uninstall', { home, uid: 501, launchctl: lc })
   assert.throws(() => readFileSync(installed.plist))
 })
+
+test('service install retries bootstrap while the old job is still unloading', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'codex-stash-svc2-'))
+  let boots = 0
+  const lc = async (args) => {
+    if (args[0] === 'bootstrap') {
+      boots += 1
+      return boots < 3 ? { code: 5, stdout: '', stderr: 'Input/output error' } : { code: 0, stdout: '', stderr: '' }
+    }
+    return { code: 0, stdout: '', stderr: '' }
+  }
+  const result = await service('install', { home, uid: 501, launchctl: lc, node: '/n', retryDelayMs: 1 })
+  assert.equal(result.loaded, true)
+  assert.equal(boots, 3)
+})
