@@ -4,7 +4,23 @@ The adapter is the only module that reads or clicks the Codex Desktop DOM. `stas
 
 These strings are the `codex-desktop-26.623` table in `src/selectors.js`. A unit test fails if the table and this file drift.
 
-Live Codex Desktop builds and CodexHost-modified layouts still need a real install to confirm. Public notes these attributes came from are listed at the bottom.
+Verified against a live Codex Desktop renderer running under CodexHost on 2026-10-12 (zh-CN UI). See "Live DOM findings" below. Public notes these attributes came from are listed at the bottom.
+
+## Live DOM findings (2026-10-12, Codex Desktop + CodexHost)
+
+| Assumption | Live DOM | Adapter handling |
+| --- | --- | --- |
+| `aside[data-testid="app-shell-floating-left-panel"]` | absent | falls through to `aside.app-shell-left-panel` (present) |
+| `data-app-action-sidebar-section="pinned"` etc. | attribute present but **empty** | key read from `data-app-action-sidebar-section-heading` on the `<section>` itself: `Pinned`, `Projects`, `Recents` (`Recents` → `recent`) |
+| `[data-app-action-sidebar-section-heading]` is a heading child | it is an attribute on the section; the title row is `.group\/nav-section-title` | heading class read from `.group\/nav-section-title`, its text wrapper class, the inner `flex-col` wrapper class, and the disclosure `<svg>` are copied for presentation |
+| Collapsed state | `data-app-action-sidebar-section-collapsed="true"` and toggle `aria-expanded="false"` | collapsed sections render **no thread rows** |
+| Current row `[aria-current="page"]` | `aria-current="page"` sits on the 首页/home nav button, not a thread | current row is `[data-app-action-sidebar-thread-active="true"]`, then `[data-app-action-sidebar-thread-selected="true"]`; otherwise `[data-above-composer-conversation-id]` (bare UUID) |
+| Row title from text | row carries `data-app-action-sidebar-thread-title` | title attribute preferred |
+| Row ids | `data-app-action-sidebar-thread-id="local:<uuid>"`, plus `data-app-action-sidebar-thread-host-id` (e.g. `remote-ssh-discovered:<host>`) and `-kind="local"` | unchanged; drafts `local:client-new-thread:…` still rejected |
+| Composer | `[data-codex-composer-root]`, `[data-thread-scroll-footer="true"]`, `.ProseMirror` all present | unchanged |
+
+Because collapsed sections render no rows, a stash row whose thread is not currently rendered is **not disabled**. `openThread` expands each collapsed native section in turn, waits up to 600 ms for the row, clicks it, and collapses the section again.
+
 
 ## Version table
 
@@ -37,6 +53,9 @@ Native sections expose:
 | Section root | `[data-app-action-sidebar-section]` |
 | Heading row | `[data-app-action-sidebar-section-heading]` |
 | Collapse control | `[data-app-action-sidebar-section-toggle]` |
+| Section key attributes, in order | `data-app-action-sidebar-section`, `data-app-action-sidebar-section-heading` |
+| Collapsed flag | `data-app-action-sidebar-section-collapsed` |
+| Title row (presentation donor) | `.group\/nav-section-title` |
 
 Known `data-app-action-sidebar-section` values, used only to pick a style donor and an insert slot: `pinned`, `projects`, `recent`, `chats`, `threads`, `cloud`.
 
@@ -52,6 +71,9 @@ Our own section never sets `data-app-action-sidebar-section`, so Codex's React t
 | --- | --- |
 | Row container | `[data-app-action-sidebar-thread-row]` |
 | Stable id | `data-app-action-sidebar-thread-id` |
+| Active row | `[data-app-action-sidebar-thread-active="true"]` |
+| Selected row (attr) | `[data-app-action-sidebar-thread-selected="true"]` |
+| Title | `data-app-action-sidebar-thread-title` |
 | Current row | `[aria-current="page"]` |
 | Selected row | `[aria-selected="true"]` |
 | Pin state, read-only | `data-app-action-sidebar-thread-pinned` |
@@ -60,6 +82,7 @@ Our own section never sets `data-app-action-sidebar-section`, so Codex's React t
 
 Current-thread order:
 
+0. `[data-app-action-sidebar-thread-active="true"]`, then `[data-app-action-sidebar-thread-selected="true"]`.
 1. The `[aria-current="page"]` node, or the thread row that contains it.
 2. The same walk for `[aria-selected="true"]`.
 3. `[data-above-composer-conversation-id]` on the above-composer portal.

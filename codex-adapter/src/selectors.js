@@ -23,8 +23,17 @@ export const SELECTOR_TABLE = {
   section: '[data-app-action-sidebar-section]',
   sectionHeading: '[data-app-action-sidebar-section-heading]',
   sectionToggle: '[data-app-action-sidebar-section-toggle]',
+  // Live 26.x builds leave data-app-action-sidebar-section empty and put the
+  // English key (Pinned / Projects / Recents) on the section's own
+  // data-app-action-sidebar-section-heading attribute.
+  sectionKeyAttrs: ['data-app-action-sidebar-section', 'data-app-action-sidebar-section-heading'],
+  sectionCollapsedAttr: 'data-app-action-sidebar-section-collapsed',
+  sectionTitleRow: '.group\\/nav-section-title',
   threadRow: '[data-app-action-sidebar-thread-row]',
   threadIdAttr: 'data-app-action-sidebar-thread-id',
+  threadTitleAttr: 'data-app-action-sidebar-thread-title',
+  threadActive: '[data-app-action-sidebar-thread-active="true"]',
+  threadSelected: '[data-app-action-sidebar-thread-selected="true"]',
   threadPinnedAttr: 'data-app-action-sidebar-thread-pinned',
   projectIdAttr: 'data-app-action-sidebar-project-id',
   projectRow: '[data-app-action-sidebar-project-row]',

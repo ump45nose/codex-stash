@@ -30,6 +30,18 @@ export function createAdapter(doc, options = {}) {
     return [...doc.querySelectorAll(table.section)].filter((section) => !isOurNode(section))
   }
 
+  /** Normalized section key: pinned / projects / recent / … or '' */
+  function sectionKey(section) {
+    for (const attr of table.sectionKeyAttrs ?? ['data-app-action-sidebar-section']) {
+      const raw = section.getAttribute(attr)
+      if (!raw) continue
+      const key = raw.trim().toLowerCase()
+      if (key === 'recents') return 'recent'
+      return key
+    }
+    return ''
+  }
+
   function firstNative(selector) {
     return [...doc.querySelectorAll(selector)].find((node) => !isOurNode(node)) ?? null
   }
@@ -48,6 +60,11 @@ export function createAdapter(doc, options = {}) {
   }
 
   function currentRow() {
+    for (const selector of [table.threadActive, table.threadSelected]) {
+      if (!selector) continue
+      const row = firstNative(selector)
+      if (row?.hasAttribute(table.threadIdAttr)) return row
+    }
     const marked = doc.querySelector(table.current)
     const viaCurrent = marked?.closest?.(`[${table.threadIdAttr}]`)
     if (viaCurrent && !isOurNode(viaCurrent)) return viaCurrent
@@ -58,6 +75,8 @@ export function createAdapter(doc, options = {}) {
   }
 
   function rowTitle(row) {
+    const attrTitle = table.threadTitleAttr && row.getAttribute(table.threadTitleAttr)?.trim()
+    if (attrTitle) return attrTitle
     const copy = row.cloneNode(true)
     copy.querySelectorAll('button, [data-app-action-sidebar-thread-pinned]').forEach((node) => {
       if (node !== copy) node.remove()
@@ -70,18 +89,56 @@ export function createAdapter(doc, options = {}) {
   function composerContains(node) {
     if (!node || typeof node.closest !== 'function') return false
     if (isOurNode(node)) return false
-    const root = doc.querySelector(table.composerRoot)
-    if (root?.contains(node)) return true
-    const footer = doc.querySelector(table.threadFooter)
-    if (footer?.contains(node) && node.closest(table.composer)) return true
+    // Codex keeps earlier thread views mounted (hidden), so there can be
+    // several composer roots; the event target's own ancestor decides.
+    if (node.closest(table.composerRoot)) return true
+    if (node.closest(table.threadFooter) && node.closest(table.composer)) return true
     return false
+  }
+
+  function isShown(element) {
+    if (typeof element.checkVisibility === 'function') {
+      return element.checkVisibility({ visibilityProperty: true })
+    }
+    for (let node = element; node && node.nodeType === 1; node = node.parentElement) {
+      if (node.hidden || node.style?.display === 'none') return false
+    }
+    return true
+  }
+
+  /**
+   * The above-composer portal is itself display:none when empty, and stale
+   * portals of cached (hidden) thread views stay in the DOM. Pick the portal
+   * whose nearest scope with a composer root has that composer visible.
+   */
+  function activePortal() {
+    const portals = [...doc.querySelectorAll(table.conversationId)].filter((node) => !isOurNode(node))
+    if (portals.length <= 1) {
+      const only = portals[0]
+      if (!only) return null
+      const scopeRoot = composerScope(only)
+      return !scopeRoot || isShown(scopeRoot) ? only : null
+    }
+    for (const portal of portals) {
+      const scopeRoot = composerScope(portal)
+      if (scopeRoot && isShown(scopeRoot)) return portal
+    }
+    return null
+  }
+
+  function composerScope(portal) {
+    for (let node = portal.parentElement; node; node = node.parentElement) {
+      const root = node.querySelector(table.composerRoot)
+      if (root) return root
+    }
+    return null
   }
 
   function readCurrentThread() {
     const sidebarRow = currentRow()
     const sidebarId = sidebarRow?.getAttribute(table.threadIdAttr)
     if (sidebarId) return { raw: sidebarId, source: 'sidebar' }
-    const portal = doc.querySelector(table.conversationId)
+    const portal = activePortal()
     const portalId = portal?.getAttribute('data-above-composer-conversation-id')
     if (portalId) return { raw: portalId, source: 'composer' }
     const route = readRouteThreadId(doc)
@@ -140,29 +197,46 @@ export function createAdapter(doc, options = {}) {
     }
   }
 
+  // Collapsed native sections render no rows; keep the last row class seen.
+  let lastRowClass = ''
   function readChrome() {
     const sections = nativeSections()
     let section = null
     for (const key of table.sectionKeys) {
       section = sections.find(
-        (candidate) => candidate.getAttribute('data-app-action-sidebar-section') === key,
+        (candidate) => sectionKey(candidate) === key,
       )
       if (section) break
     }
     section = section ?? sections[0] ?? null
     if (!section) return null
-    const heading = section.querySelector(table.sectionHeading)
     const toggle = section.querySelector(table.sectionToggle)
+    const heading =
+      section.querySelector(table.sectionHeading) ||
+      (table.sectionTitleRow && toggle?.closest(table.sectionTitleRow)) ||
+      null
+    // Wrapper between the title row and the toggle (carries text colour/weight).
+    let headingTextClass = ''
+    if (heading && toggle) {
+      let node = toggle.parentElement
+      while (node && node.parentElement !== heading) node = node.parentElement
+      headingTextClass = node?.className || ''
+    }
+    const inner = section.firstElementChild
+    const chevron = toggle?.querySelector('svg')
     const row = firstNative(table.threadRow) || firstNative(`[${table.threadIdAttr}]`)
     return {
       sectionTag: section.tagName.toLowerCase(),
       sectionClass: section.className,
+      innerClass: inner && inner !== heading && heading && inner.contains(heading) ? inner.className : '',
       headingTag: (heading?.tagName || 'DIV').toLowerCase(),
       headingClass: heading?.className || '',
+      headingTextClass,
+      chevronSvg: chevron ? chevron.outerHTML : '',
       toggleTag: (toggle?.tagName || 'BUTTON').toLowerCase(),
       toggleClass: toggle?.className || '',
       rowTag: (row?.tagName || 'BUTTON').toLowerCase(),
-      rowClass: row?.className || '',
+      rowClass: (lastRowClass = row?.className || lastRowClass),
     }
   }
 
@@ -171,9 +245,7 @@ export function createAdapter(doc, options = {}) {
     const parent = scroll || findSidebar()
     if (!parent) return null
     const sections = [...parent.querySelectorAll(table.section)].filter((section) => !isOurNode(section))
-    const pinned = sections.find(
-      (section) => section.getAttribute('data-app-action-sidebar-section') === 'pinned',
-    )
+    const pinned = sections.find((section) => sectionKey(section) === 'pinned')
     if (pinned?.parentElement) {
       return { parent: pinned.parentElement, before: nextHostNode(pinned.nextSibling) }
     }
@@ -189,11 +261,47 @@ export function createAdapter(doc, options = {}) {
     return current
   }
 
-  function openThread(threadId) {
-    const row = findRow(threadId)
-    if (!row) return { ok: false, reason: 'not-in-sidebar' }
-    row.click()
-    return { ok: true }
+  /**
+   * Click the native row for this id. Collapsed native sections do not render
+   * their rows, so when the row is absent each collapsed section is expanded
+   * in turn, searched, and collapsed again (the user's layout is restored).
+   */
+  async function openThread(threadId, { waitMs = 600, step = 50 } = {}) {
+    const direct = findRow(threadId)
+    if (direct) {
+      direct.click()
+      return { ok: true }
+    }
+    if (!domThreadKey(threadId)) return { ok: false, reason: 'not-in-sidebar' }
+    const collapsedAttr = table.sectionCollapsedAttr
+    const collapsed = nativeSections().filter((section) => {
+      const toggle = section.querySelector(table.sectionToggle)
+      return (
+        toggle &&
+        (section.getAttribute(collapsedAttr) === 'true' ||
+          toggle.getAttribute('aria-expanded') === 'false')
+      )
+    })
+    for (const section of collapsed) {
+      const toggle = section.querySelector(table.sectionToggle)
+      toggle.click()
+      let row = null
+      for (let waited = 0; waited <= waitMs && !row; waited += step) {
+        row = findRow(threadId)
+        if (!row) await sleep(step)
+      }
+      if (row) row.click()
+      // Restore: re-query the toggle, React may have re-rendered it.
+      const again = section.isConnected ? section.querySelector(table.sectionToggle) : null
+      if (again && again.getAttribute('aria-expanded') === 'true') again.click()
+      if (row) return { ok: true, expanded: sectionKey(section) || true }
+    }
+    return { ok: false, reason: 'not-in-sidebar' }
+  }
+
+  function sleep(ms) {
+    const win = doc.defaultView
+    return new Promise((resolve) => (win?.setTimeout ?? setTimeout)(resolve, ms))
   }
 
   function onUserMessage(handler) {
@@ -263,7 +371,13 @@ export function createAdapter(doc, options = {}) {
         subtree: true,
         characterData: true,
         attributes: true,
-        attributeFilter: ['aria-current', 'aria-selected', table.threadIdAttr],
+        attributeFilter: [
+          'aria-current',
+          'aria-selected',
+          table.threadIdAttr,
+          'data-app-action-sidebar-thread-active',
+          'data-app-action-sidebar-thread-selected',
+        ],
       })
     }
 
@@ -275,6 +389,18 @@ export function createAdapter(doc, options = {}) {
     selectorTable: table,
     probe,
     readCurrentThread,
+    /**
+     * Display title of the open thread when its row is not rendered.
+     * The renderer document.title is the open thread's title in live builds.
+     * Used for display only, never to derive an id.
+     */
+    readCurrentTitle() {
+      const row = currentRow()
+      if (row) return rowTitle(row)
+      const title = doc.title?.replace(/\s+/g, ' ').trim()
+      if (!title || /^(ChatGPT|Codex)$/i.test(title)) return null
+      return title
+    },
     getThreadTitle(threadId) {
       const row = findRow(threadId)
       return row ? rowTitle(row) : null
@@ -284,6 +410,7 @@ export function createAdapter(doc, options = {}) {
     },
     openThread,
     readChrome,
+    sectionKey,
     mountPoint,
     onUserMessage,
     observe,
