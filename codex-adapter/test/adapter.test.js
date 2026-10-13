@@ -85,7 +85,7 @@ test('probe is healthy and chrome is cloned from the native section', () => {
   assert.equal(chrome.toggleClass, 'native-toggle')
   assert.equal(chrome.rowClass, 'native-row')
   const point = adapter.mountPoint()
-  assert.equal(point.before.getAttribute('data-app-action-sidebar-section'), 'projects')
+  assert.equal(point.after.getAttribute('data-app-action-sidebar-section'), 'projects', 'last native section in this fixture')
 })
 
 test('current thread id comes from the row attribute, not the title', () => {

@@ -17,6 +17,8 @@ const DOTS =
  *   doc: Document,
  *   parent: Element,
  *   before?: Node | null,
+ *   after?: Element | null,
+ *   gap?: string | null,
  *   chrome?: Record<string, any> | null,
  *   prefix?: string,
  *   strings: Record<string, string>,
@@ -48,7 +50,12 @@ export function mountSection(options) {
   // Callbacks may close over fresh state on every render.
   section.__codexStashHandlers = options
   applyCollapsed(section, prefix, collapsed, !fresh)
-  if (section.parentElement !== parent || (options.before && section.nextSibling !== options.before && fresh)) {
+  if (options.after && options.after.parentNode === parent) {
+    section.style.marginTop = options.gap || ''
+    // Pin to "right after the anchor section" on every render: survives React
+    // re-rendering / re-ordering siblings without fighting other nodes.
+    if (section.previousElementSibling !== options.after) options.after.after(section)
+  } else if (section.parentElement !== parent || (options.before && section.nextSibling !== options.before && fresh)) {
     if (options.before && options.before.parentNode === parent) parent.insertBefore(section, options.before)
     else parent.append(section)
   }

@@ -93,7 +93,7 @@ test('install is idempotent, stashes by id, opens the row, and uninstalls cleanl
   assert.equal(window.document.querySelectorAll('#codex-stash-v1-section').length, 1)
   const section = window.document.getElementById('codex-stash-v1-section')
   assert.equal(section.className, 'native-section')
-  assert.equal(section.nextElementSibling.classList.contains('projects'), true)
+  assert.equal(section.previousElementSibling.classList.contains('projects'), true, 'after the last native section')
   assert.match(section.textContent, /收纳箱/)
 
   const second = install({ window, isMac: true, reminderIntervalMs: 0 })
@@ -568,5 +568,31 @@ test('stash rows carry native-style hover pills 改日期 / 移出 with own tool
   assert.equal(opened(), 0)
   const css = window.document.querySelector('style[id^="codex-stash-v1"]')?.textContent ?? ''
   assert.match(css, /row:hover \.codex-stash-v1-date/)
+  uninstall({ window })
+})
+
+test('the stash section stays last, right after 最近, through growth, re-renders and collapse', async () => {
+  const { window } = page()
+  const doc = window.document
+  const projects = doc.querySelector('[data-app-action-sidebar-section="projects"]')
+  projects.insertAdjacentHTML('afterend', `<section data-app-action-sidebar-section="" data-app-action-sidebar-section-heading="Recents" class="native-section recents">
+    <div data-app-action-sidebar-section-heading class="native-heading"><button data-app-action-sidebar-section-toggle aria-expanded="true">Recents</button></div>
+    <div class="list"></div></section>`)
+  install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} } })
+  const stash = () => doc.getElementById('codex-stash-v1-section')
+  const recents = () => doc.querySelector('section.recents')
+  assert.equal(stash().previousElementSibling, recents())
+  // Infinite scroll: rows appended inside 最近 keep the stash below them.
+  for (let i = 0; i < 30; i += 1) recents().querySelector('.list').insertAdjacentHTML('beforeend', `<div>row ${i}</div>`)
+  // React inserts a sibling after 最近 (e.g. a loader/sentinel) → we move back right after 最近.
+  recents().insertAdjacentHTML('afterend', '<div class="sentinel"></div>')
+  await wait(50)
+  assert.equal(stash().previousElementSibling, recents())
+  // 最近 re-created (collapse/expand re-render) → still after the new node.
+  const fresh = recents().cloneNode(true)
+  recents().replaceWith(fresh)
+  await wait(50)
+  assert.equal(stash().previousElementSibling, fresh)
+  assert.equal(doc.querySelectorAll('#codex-stash-v1-section').length, 1)
   uninstall({ window })
 })

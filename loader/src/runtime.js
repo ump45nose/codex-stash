@@ -215,6 +215,8 @@ export function install(options = {}) {
       doc,
       parent: point.parent,
       before: point.before,
+      after: point.after ?? null,
+      gap: point.gap ?? null,
       chrome: adapter.readChrome(),
       prefix: NODE_PREFIX,
       strings,

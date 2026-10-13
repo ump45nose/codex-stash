@@ -51,7 +51,7 @@ function live() {
   return { doc, recents, clicks }
 }
 
-test('live layout: section keys come from the heading attribute and stash goes after Pinned', () => {
+test('live layout: section keys come from the heading attribute and stash goes after Recents (last)', () => {
   const { doc } = live()
   const adapter = createAdapter(doc)
   assert.equal(adapter.probe().ok, true)
@@ -59,7 +59,9 @@ test('live layout: section keys come from the heading attribute and stash goes a
   assert.equal(adapter.sectionKey(pinned), 'pinned')
   assert.equal(adapter.sectionKey(doc.querySelector('[data-app-action-sidebar-section-heading="Recents"]')), 'recent')
   const point = adapter.mountPoint()
-  assert.equal(point.before, pinned.nextElementSibling)
+  const recents = doc.querySelector('[data-app-action-sidebar-section-heading="Recents"]')
+  assert.equal(point.after, recents)
+  assert.equal(point.parent, recents.parentElement)
   const chrome = adapter.readChrome()
   assert.match(chrome.headingClass, /nav-section-title/)
   assert.match(chrome.headingTextClass, /text-tertiary/)

@@ -672,14 +672,38 @@ export function createAdapter(doc, options = {}) {
     const parent = scroll || findSidebar()
     if (!parent) return null
     const sections = [...parent.querySelectorAll(table.section)].filter((section) => !isOurNode(section))
-    const pinned = sections.find((section) => sectionKey(section) === 'pinned')
-    if (pinned?.parentElement) {
-      return { parent: pinned.parentElement, before: nextHostNode(pinned.nextSibling) }
+    // Last in the list: right after 最近 (Recents). Its rows (and "show more"
+    // growth) live inside the Recents <section>, so a sibling placed after
+    // that section stays below the whole list. Fallback: after the last
+    // native section.
+    const anchor =
+      sections.find((section) => sectionKey(section) === 'recent') ?? sections[sections.length - 1]
+    if (anchor?.parentElement) {
+      return { parent: anchor.parentElement, before: nextHostNode(anchor.nextSibling), after: anchor, gap: sectionGap(anchor) }
     }
     if (sections[0]?.parentElement) {
       return { parent: sections[0].parentElement, before: sections[0] }
     }
     return { parent, before: nextHostNode(parent.firstChild) }
+  }
+
+  /**
+   * Native sections are separated by the row-gap of the flex list that holds
+   * their wrappers (16px live). Sharing 最近's wrapper loses that gap, so the
+   * mount point reports it for the UI to apply as a top margin.
+   */
+  function sectionGap(anchor) {
+    const win = doc.defaultView
+    for (let node = anchor.parentElement; node && node.nodeType === 1; node = node.parentElement) {
+      const style = win?.getComputedStyle?.(node)
+      if (!style) return null
+      if (style.display === 'contents') continue
+      if (style.display.includes('flex') || style.display.includes('grid')) {
+        return /^\d/.test(style.rowGap) ? style.rowGap : null
+      }
+      if (node !== anchor.parentElement) return null
+    }
+    return null
   }
 
   function nextHostNode(node) {

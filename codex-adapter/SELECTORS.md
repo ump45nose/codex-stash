@@ -177,3 +177,25 @@ A CodexHost build that drops `data-app-action-sidebar-thread-id` without a repla
   put a re-pinned chat back where it was. Absent → position is reported, not forced.
 - Re-pin order of preference: rendered row pin pill (sections expanded briefly) →
   搜索 by id + 聊天操作 → 置顶, then return to the previously open thread.
+
+## Mount point: last, after 最近 (round 6, captured live 2026-10-13)
+
+Live tree under `[data-app-action-sidebar-scroll]`:
+
+```
+div.contents > div.contents >
+  div.-mb-4.pb-4 > div > section[heading=Pinned]
+  div            > section[heading=Projects]
+  div.-mb-4.pb-4 > section[heading=Recents]   ← stash section is inserted right after this
+```
+
+最近's rows and its "show more" growth render *inside* the Recents `<section>`
+(20 rows initially; no separate virtualized sibling), so a sibling placed
+after that section is always below the whole list and reachable by scrolling.
+`mountPoint()` returns `{ parent, before, after }` with `after` = the Recents
+section (fallback: last native section). The UI re-checks on every observed
+render that its previous element sibling is `after`, and moves itself back if
+React inserted a node there or re-created the Recents section (collapse/expand).
+Using the same wrapper as Recents keeps native inter-section spacing.
+
+Spacing: native wrappers sit in `div.relative.isolate` (flex, `row-gap: 16px`). Our section shares the Recents wrapper, so the adapter reports that row-gap (`mountPoint().gap`) and the UI applies it as `margin-top`, matching the 项目→最近 distance.
