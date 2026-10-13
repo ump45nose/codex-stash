@@ -538,6 +538,18 @@ export function install(options = {}) {
     }),
   )
 
+  // Self-heal: if a sidebar re-render dropped our section without a mutation
+  // we observed, remount it.
+  const healMs = options.healIntervalMs ?? 2000
+  if (healMs > 0 && typeof win.setInterval === 'function') {
+    const heal = win.setInterval(() => {
+      if (disabled) return
+      const node = doc.getElementById(`${NODE_PREFIX}section`)
+      if (!node || !node.isConnected) render()
+    }, healMs)
+    disposers.add(() => win.clearInterval(heal))
+  }
+
   const interval = options.reminderIntervalMs ?? 60_000
   if (interval > 0 && typeof win.setInterval === 'function') {
     const timer = win.setInterval(() => checkDue(clock()), interval)

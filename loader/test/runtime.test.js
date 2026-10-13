@@ -1,17 +1,21 @@
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import test from 'node:test'
+import test, { after } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { JSDOM } from 'jsdom'
 import { domThreadKey } from '../../codex-adapter/src/index.js'
 import { canonicalThreadId } from '../../stash-core/src/index.js'
 import { GUARD, install, uninstall } from '../src/runtime.js'
+import { GUARD_CHECK_EXPRESSION } from '../src/supervise.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const UUID = '11111111-1111-1111-1111-111111111111'
 const OTHER = '22222222-2222-2222-2222-222222222222'
 const THIRD_ID = '33333333-3333-3333-3333-333333333333'
+
+const openWindows = []
+after(() => openWindows.forEach((w) => w.close()))
 
 function page() {
   const html = `<!doctype html><html><body>
@@ -42,6 +46,7 @@ function page() {
     <div id="codex-stash-v1-stale">stale</div>
   </body></html>`
   const window = new JSDOM(html, { url: 'https://codex.local/', pretendToBeVisual: true }).window
+  openWindows.push(window)
   let opened = 0
   window.document.querySelector(`[data-app-action-sidebar-thread-id="local:${UUID}"]`).addEventListener('click', () => {
     opened += 1
@@ -619,4 +624,46 @@ test('「不设时间」 stashes undated: no date text, no 到期, no reminder; 
   window.document.querySelector('[data-preset="none"]').click()
   assert.equal(row().querySelector('.codex-stash-v1-date'), null)
   uninstall({ window })
+})
+
+test('rows still keyed client-new-thread (Codex 26.1007) get the button via their React conversationId', () => {
+  const { window } = page()
+  const REAL = '01a13468-6d2a-7a92-878e-61e6310da5dd'
+  const row = addNativeRow(window, 'client-new-thread:edfde1bd-34a5-4640-9aea-a641d7073368', 'Fresh chat')
+  row['__reactFiber$test'] = { memoizedProps: { role: 'button' }, return: { memoizedProps: { conversationId: REAL }, return: null } }
+  install({ window, isMac: true, reminderIntervalMs: 0, healIntervalMs: 0, log: { warn() {}, info() {} } })
+  const button = row.querySelector('[id^="codex-stash-v1-act-"]')
+  assert.ok(button, 'button injected on a pending-id row')
+  assert.equal(button.getAttribute('data-codex-stash-thread-id'), REAL)
+  button.click()
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  const ids = [...window.document.querySelectorAll('.codex-stash-v1-row')].map((r) => r.getAttribute('data-codex-stash-thread-id'))
+  assert.deepEqual(ids, [REAL])
+  // A pending row with no resolvable id is still skipped (never keyed by a client id).
+  const bare = addNativeRow(window, 'client-new-thread:00000000-0000-0000-0000-000000000000', 'Draft')
+  window[GUARD].render()
+  assert.equal(bare.querySelector('[id^="codex-stash-v1-act-"]'), null)
+  uninstall({ window })
+})
+
+test('a dropped section is remounted by the heal timer', async () => {
+  const { window } = page()
+  install({ window, isMac: true, reminderIntervalMs: 0, healIntervalMs: 30, log: { warn() {}, info() {} } })
+  window.document.getElementById('codex-stash-v1-section').remove()
+  await wait(120)
+  assert.ok(window.document.getElementById('codex-stash-v1-section')?.isConnected)
+  uninstall({ window })
+})
+
+test('watch health check: guard without mounted UI renders, else drops the guard for re-injection', () => {
+  const { window } = page()
+  const check = () => new Function('globalThis', 'document', `return ${GUARD_CHECK_EXPRESSION}`)(window, window.document)
+  install({ window, isMac: true, reminderIntervalMs: 0, healIntervalMs: 0, log: { warn() {}, info() {} } })
+  assert.equal(check(), true)
+  window.document.getElementById('codex-stash-v1-section').remove()
+  assert.equal(check(), true, 'one render restores it')
+  window[GUARD].render = () => {}
+  window.document.getElementById('codex-stash-v1-section').remove()
+  assert.equal(check(), false)
+  assert.equal(window[GUARD], undefined, 'guard dropped so watch re-injects')
 })

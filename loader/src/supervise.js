@@ -1,8 +1,24 @@
 import { chooseNewer, emptyState, parseState } from '../../stash-core/src/index.js'
 import { READ_STATE_EXPRESSION, evaluate, installExpression, probeRenderer, writeStateExpression } from './cdp.js'
 
-export const GUARD_CHECK_EXPRESSION =
-  '(() => { const g = globalThis.__codexStash_v1; return Boolean(g && g.installed) })()'
+/**
+ * Guard presence is not enough: the guard can survive while its UI is gone
+ * (sidebar subtree replaced without a mutation we observe). Healthy means the
+ * guard is installed and, when a Codex sidebar exists, our section is mounted
+ * in it (or the adapter is deliberately disabled). Otherwise try one render;
+ * if the section is still missing, drop the guard so the caller re-injects.
+ */
+export const GUARD_CHECK_EXPRESSION = `(() => {
+  const g = globalThis.__codexStash_v1;
+  if (!g || !g.installed) return false;
+  const scroll = document.querySelector('[data-app-action-sidebar-scroll]');
+  const mounted = () => { const s = document.getElementById('codex-stash-v1-section'); return Boolean(s && s.isConnected && scroll && scroll.contains(s)); };
+  if (!scroll || g.disabled || mounted()) return true;
+  try { g.render(); } catch (e) {}
+  if (mounted()) return true;
+  try { g.uninstall(); } catch (e) {}
+  return false;
+})()`
 
 /**
  * Long-running injector behind `codex-stash watch`.

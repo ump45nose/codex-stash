@@ -67,11 +67,36 @@ export function createAdapter(doc, options = {}) {
     return [...doc.querySelectorAll(`[${table.threadIdAttr}]`)].filter((node) => !isOurNode(node))
   }
 
+  /**
+   * Stable thread id of a native row. Codex 26.1007 keeps freshly created
+   * chats in the sidebar as `local:client-new-thread:<uuid>` even after the
+   * conversation is persisted; the real id is then only on the row's React
+   * props (`conversationId`). Pending ids are never used as stash keys.
+   */
+  function rowKey(row) {
+    const direct = domThreadKey(row.getAttribute(table.threadIdAttr))
+    if (direct) return direct
+    return conversationIdFromProps(row)
+  }
+
+  function conversationIdFromProps(node) {
+    const fiberKey = Object.keys(node).find((k) => k.startsWith('__reactFiber'))
+    let fiber = fiberKey ? node[fiberKey] : null
+    for (let depth = 0; fiber && depth < 25; depth++, fiber = fiber.return) {
+      const value = fiber.memoizedProps?.conversationId
+      if (typeof value === 'string') {
+        const key = domThreadKey(value)
+        if (key) return key
+      }
+    }
+    return null
+  }
+
   function findRow(threadId) {
     const key = domThreadKey(threadId)
     if (!key) return null
     return (
-      threadNodes().find((node) => domThreadKey(node.getAttribute(table.threadIdAttr)) === key) ??
+      threadNodes().find((node) => rowKey(node) === key) ??
       null
     )
   }
@@ -153,13 +178,18 @@ export function createAdapter(doc, options = {}) {
 
   function readCurrentThread() {
     const sidebarRow = currentRow()
-    const sidebarId = sidebarRow?.getAttribute(table.threadIdAttr)
-    if (sidebarId) return { raw: sidebarId, source: 'sidebar' }
+    const sidebarAttr = sidebarRow?.getAttribute(table.threadIdAttr) ?? null
+    if (sidebarAttr && domThreadKey(sidebarAttr)) return { raw: sidebarAttr, source: 'sidebar' }
+    // Pending client id on the row: prefer the resolved conversation id.
+    const resolved = sidebarRow ? conversationIdFromProps(sidebarRow) : null
+    if (resolved) return { raw: resolved, source: 'sidebar-props' }
     const portal = activePortal()
     const portalId = portal?.getAttribute('data-above-composer-conversation-id')
     if (portalId) return { raw: portalId, source: 'composer' }
     const route = readRouteThreadId(doc)
     if (route) return { raw: route, source: 'route' }
+    // Still a draft: hand back the raw client id so callers can say so.
+    if (sidebarAttr) return { raw: sidebarAttr, source: 'sidebar' }
     return { raw: null, source: null }
   }
 
@@ -338,7 +368,7 @@ export function createAdapter(doc, options = {}) {
   function rowsFor(threadId) {
     const key = domThreadKey(threadId)
     if (!key) return []
-    return threadNodes().filter((node) => domThreadKey(node.getAttribute(table.threadIdAttr)) === key)
+    return threadNodes().filter((node) => rowKey(node) === key)
   }
 
   /** true / false when a row is rendered, null when unknown. */
@@ -431,7 +461,12 @@ export function createAdapter(doc, options = {}) {
 
   function keyToId(key) {
     const raw = String(key).replace(/^codex:thread:/, '')
-    return raw.startsWith('content-tab:') ? null : domThreadKey(raw)
+    if (raw.startsWith('content-tab:')) return null
+    const direct = domThreadKey(raw)
+    if (direct) return direct
+    // Pending client id: resolve through the rendered row's conversationId.
+    const row = threadNodes().find((node) => node.getAttribute(table.threadIdAttr) === raw)
+    return row ? rowKey(row) : null
   }
 
   /** Pinned thread ids in display order (expands the section briefly). */
@@ -442,7 +477,7 @@ export function createAdapter(doc, options = {}) {
       if (!section) return []
       return [...section.querySelectorAll(`[${table.threadIdAttr}]`)]
         .filter((r) => r.getAttribute(table.threadPinnedAttr) === 'true')
-        .map((r) => domThreadKey(r.getAttribute(table.threadIdAttr)))
+        .map((r) => rowKey(r))
         .filter(Boolean)
     })
   }
@@ -637,7 +672,7 @@ export function createAdapter(doc, options = {}) {
   function rowActionSlots() {
     const slots = []
     for (const row of threadNodes()) {
-      const key = domThreadKey(row.getAttribute(table.threadIdAttr))
+      const key = rowKey(row)
       if (!key) continue
       const place = rowActionContainer(row)
       const pill = place && nativePills(row)[0]
@@ -653,7 +688,7 @@ export function createAdapter(doc, options = {}) {
     const element = node?.nodeType === 1 ? node : node?.parentElement
     if (!element || isOurNode(element)) return null
     const row = element.closest?.(`[${table.threadIdAttr}]`)
-    return row ? domThreadKey(row.getAttribute(table.threadIdAttr)) : null
+    return row ? rowKey(row) : null
   }
 
   /** Product of CSS zoom from the sidebar up (live builds zoom the page surface). */
@@ -833,7 +868,20 @@ export function createAdapter(doc, options = {}) {
     }
 
     rebind()
-    return () => observer.disconnect()
+    // Self-heal: Codex can swap the sidebar subtree deep below <body>, which
+    // the body childList watch never sees. Poll cheaply for a new sidebar.
+    const win = doc.defaultView
+    const timer = win?.setInterval?.(() => {
+      const next = findSidebar()
+      if (next === sidebar && (!sidebar || sidebar.isConnected)) return
+      sidebar = next
+      rebind()
+      handler()
+    }, 1500)
+    return () => {
+      observer.disconnect()
+      if (timer != null) win.clearInterval(timer)
+    }
   }
 
   return {

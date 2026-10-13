@@ -199,3 +199,22 @@ React inserted a node there or re-created the Recents section (collapse/expand).
 Using the same wrapper as Recents keeps native inter-section spacing.
 
 Spacing: native wrappers sit in `div.relative.isolate` (flex, `row-gap: 16px`). Our section shares the Recents wrapper, so the adapter reports that row-gap (`mountPoint().gap`) and the UI applies it as `margin-top`, matching the 项目→最近 distance.
+
+## Pending-id rows (Codex 26.1007.30912, captured live 2026-10-13)
+
+Newly created chats keep `data-app-action-sidebar-thread-id="local:client-new-thread:<uuid>"`
+on their sidebar row even after the conversation is persisted (seen on the
+open chat and on other fresh chats, local and remote-ssh hosts). The real id
+is on the row's React props: the nearest fiber ancestor's
+`memoizedProps.conversationId` (e.g. `01a13468-…`), which also matches the
+composer portal's `data-above-composer-conversation-id`.
+
+The adapter's `rowKey(row)` uses the attribute when it is a stable id and
+otherwise that `conversationId`; a pending row without one is skipped (never
+keyed by a client id). Before this, such rows got no 收纳 button and the
+hotkey on the open chat reported a draft — the "controls disappeared" report.
+
+Self-heal: the adapter polls (1.5 s) for a replaced sidebar node and rebinds
+its observer; the runtime remounts the section if it is gone (2 s); `watch`'s
+health check requires the section to be mounted in the sidebar, tries one
+render, and otherwise drops the guard so it re-injects.
