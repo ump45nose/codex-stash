@@ -1,5 +1,5 @@
 export { ThreadIdError, canonicalThreadId } from './thread-id.js'
-export { PRESETS, dueAtFromPreset, dueAtFromDateInput, normalizeDueAt } from './dates.js'
+export { PRESETS, dueAtFromPreset, dueAtFromDateInput, normalizeDueAt, normalizeOptionalDueAt, isDue } from './dates.js'
 export { SCHEMA_VERSION, emptyState, parseState, stateTime, chooseNewer } from './state.js'
 export { createMemoryStorage, createLocalStorageStorage } from './storage.js'
 export { createStashStore } from './store.js'

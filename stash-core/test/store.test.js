@@ -125,3 +125,27 @@ test('pin memory survives date changes, round-trips storage, and comes back on t
   assert.equal(reloaded.take('local:11111111-1111-1111-1111-111111111111', now), null)
   assert.equal(reloaded.setPin('local:11111111-1111-1111-1111-111111111111', {}, now), false)
 })
+
+test('undated entries: null dueAt, never due, sorted after dated, date can be set and cleared, old files load', async () => {
+  const { sortRows } = await import('../src/sort.js')
+  const { parseState } = await import('../src/state.js')
+  const now = new Date('2026-10-13T10:00:00Z')
+  const store = createStashStore(createMemoryStorage())
+  const A = '11111111-1111-1111-1111-111111111111'
+  const B = '22222222-2222-2222-2222-222222222222'
+  const C = '33333333-3333-3333-3333-333333333333'
+  store.stash(A, 'a', null, now)
+  store.stash(B, 'b', '2026-10-20T01:00:00Z', now)
+  store.stash(C, 'c', '2026-10-01T01:00:00Z', now)
+  assert.equal(store.get(A).dueAt, null)
+  assert.deepEqual(store.list(now).map((r) => r.title), ['c', 'b', 'a'])
+  assert.deepEqual(sortRows(store.list(now), 'due', now).map((r) => r.title), ['c', 'b', 'a'])
+  assert.deepEqual(store.due(now).map((r) => r.title), ['c'])
+  store.setDate(A, '2026-10-14T01:00:00Z', now)
+  assert.equal(store.get(A).dueAt, '2026-10-14T01:00:00.000Z')
+  store.setDate(A, null, now)
+  assert.equal(store.get(A).dueAt, null)
+  const legacy = parseState({ version: 1, updatedAt: null, items: { [A]: { title: 'x', dueAt: '2026-10-13T01:00:00.000Z', stashedAt: '2026-10-12T01:00:00.000Z' }, [B]: { title: 'y', dueAt: null, stashedAt: '2026-10-12T01:00:00.000Z' } } })
+  assert.equal(legacy.dropped, 0)
+  assert.equal(legacy.state.items[B].dueAt, null)
+})

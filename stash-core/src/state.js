@@ -1,5 +1,5 @@
 import { canonicalThreadId } from './thread-id.js'
-import { normalizeDueAt } from './dates.js'
+import { normalizeDueAt, normalizeOptionalDueAt } from './dates.js'
 
 export const SCHEMA_VERSION = 1
 
@@ -44,7 +44,7 @@ export function parseState(raw) {
     let dueAt
     let stashedAt
     try {
-      dueAt = normalizeDueAt(item.dueAt)
+      dueAt = normalizeOptionalDueAt(item.dueAt)
       stashedAt = normalizeDueAt(item.stashedAt)
     } catch {
       dropped += 1

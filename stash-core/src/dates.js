@@ -51,6 +51,21 @@ export function dueAtFromDateInput(value) {
 }
 
 /**
+ * Undated stash (「不设时间」): null / undefined / '' → null, else normalized.
+ * @param {unknown} value
+ * @returns {string | null}
+ */
+export function normalizeOptionalDueAt(value) {
+  if (value === null || value === undefined || value === '') return null
+  return normalizeDueAt(value)
+}
+
+/** @param {string | null | undefined} dueAt @param {number} clock */
+export function isDue(dueAt, clock) {
+  return typeof dueAt === 'string' && Date.parse(dueAt) <= clock
+}
+
+/**
  * @param {unknown} value
  * @returns {string}
  */

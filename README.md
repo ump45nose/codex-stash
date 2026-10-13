@@ -123,6 +123,8 @@ Default copy is Chinese. `~/.codex-stash/config.json`:
 
 `hotkeyDate`（改日期，默认 ⇧⌘D）和 `hotkeyRemove`（移出，默认 ⇧⌘J）作用于鼠标悬停的收纳行；没有悬停时作用于当前打开且已收纳的聊天。与 Codex 内置快捷键或 CodexHost 保留键冲突时不绑定并在日志里提示。
 
+收纳时可选「不设时间」：不显示日期、不提醒，按到期日期排序时排在有日期的之后；改日期可设置或清除日期。
+
 从置顶收纳的聊天会记住置顶状态和位置；移出（菜单、快捷键或在该聊天发消息自动移出）时通过 Codex 自己的置顶操作恢复，手动排序时恢复原位置。
 
 ## 常驻运行 / Run persistently (macOS)

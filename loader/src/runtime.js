@@ -167,7 +167,7 @@ export function install(options = {}) {
         threadId: item.threadId,
         title: live || item.title || strings.untitled,
         dueLabel: formatDueLabel(item.dueAt, now, locale),
-        due: Date.parse(item.dueAt) <= now.getTime(),
+        due: Boolean(item.dueAt) && Date.parse(item.dueAt) <= now.getTime(),
         missing: !adapter.isThreadListed(item.threadId),
       }
     })
@@ -385,7 +385,8 @@ export function install(options = {}) {
       ...floatingContext(),
       onPreset(preset) {
         if (!threadId) return
-        commit(threadId, dueAtFromPreset(preset, clock()), Boolean(editThreadId), currentTitle)
+        const dueAt = preset === 'none' ? null : dueAtFromPreset(preset, clock())
+        commit(threadId, dueAt, Boolean(editThreadId), currentTitle)
       },
       onCustom(value) {
         if (!threadId) return

@@ -1,10 +1,10 @@
 import { canonicalThreadId } from './thread-id.js'
-import { normalizeDueAt } from './dates.js'
+import { isDue, normalizeOptionalDueAt } from './dates.js'
 import { emptyState, parsePin, parseState } from './state.js'
 
 /**
  * @typedef {{ wasPinned: true, index: number | null, beforeThreadId: string | null }} PinMemory
- * @typedef {{ title: string, dueAt: string, stashedAt: string, pin?: PinMemory }} StashItem
+ * @typedef {{ title: string, dueAt: string | null, stashedAt: string, pin?: PinMemory }} StashItem
  * @typedef {{ threadId: string } & StashItem} StashRow
  */
 
@@ -37,13 +37,13 @@ export function createStashStore(storage) {
     /**
      * @param {string} threadId
      * @param {string} title display cache only
-     * @param {string | Date} dueDate
+     * @param {string | Date | null} dueDate null = undated (不设时间)
      * @param {Date} [now]
      */
     stash(threadId, title, dueDate, now = new Date()) {
       const id = canonicalThreadId(threadId)
       if (typeof title !== 'string') throw new TypeError('title must be a string')
-      const dueAt = normalizeDueAt(dueDate)
+      const dueAt = normalizeOptionalDueAt(dueDate)
       const previous = state.items[id]
       state.items[id] = {
         title,
@@ -64,7 +64,7 @@ export function createStashStore(storage) {
       const id = canonicalThreadId(threadId)
       const item = state.items[id]
       if (!item) return false
-      item.dueAt = normalizeDueAt(dueDate)
+      item.dueAt = normalizeOptionalDueAt(dueDate)
       persist(now)
       return true
     },
@@ -122,9 +122,10 @@ export function createStashStore(storage) {
       return Object.entries(state.items)
         .map(([threadId, item]) => copy(threadId, item))
         .sort((a, b) => {
-          const aDue = Date.parse(a.dueAt) <= clock
-          const bDue = Date.parse(b.dueAt) <= clock
+          const aDue = isDue(a.dueAt, clock)
+          const bDue = isDue(b.dueAt, clock)
           if (aDue !== bDue) return aDue ? -1 : 1
+          if (!a.dueAt || !b.dueAt) return a.dueAt ? -1 : b.dueAt ? 1 : 0
           return Date.parse(a.dueAt) - Date.parse(b.dueAt)
         })
     },
@@ -135,7 +136,7 @@ export function createStashStore(storage) {
      */
     due(now = new Date()) {
       const clock = now.getTime()
-      return this.list(now).filter((item) => Date.parse(item.dueAt) <= clock)
+      return this.list(now).filter((item) => isDue(item.dueAt, clock))
     },
 
     /**

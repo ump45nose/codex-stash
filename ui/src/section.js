@@ -206,7 +206,9 @@ function renderRow(doc, section, row, chrome, strings, options = {}, prefix = NO
   const date = doc.createElement('time')
   date.className = 'codex-stash-v1-date'
   date.textContent = row.dueLabel
-  wrap.append(button, date)
+  // Undated (不设时间): nothing on the right, like a native row with no meta.
+  wrap.append(button)
+  if (row.dueLabel) wrap.append(date)
   if (row.due) {
     const due = doc.createElement('span')
     due.className = 'codex-stash-v1-due'

@@ -3,7 +3,7 @@ import { CHECK_ICON, svgFrom } from './icons.js'
 import { ensureStyle } from './style.js'
 import { NODE_PREFIX } from './strings.js'
 
-const PRESET_KEYS = ['tomorrow', 'in3days', 'nextMonday']
+const PRESET_KEYS = ['tomorrow', 'in3days', 'nextMonday', 'none']
 
 /**
  * @typedef {{ contentClass?: string, itemClass?: string, rowClass?: string, labelClass?: string, separatorClass?: string }} MenuChrome

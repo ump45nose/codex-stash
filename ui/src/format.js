@@ -4,6 +4,7 @@
  * @param {'zh' | 'en'} [locale]
  */
 export function formatDueLabel(dueAt, now = new Date(), locale = 'zh') {
+  if (dueAt == null || dueAt === '') return ''
   const date = new Date(dueAt)
   if (Number.isNaN(date.getTime())) return ''
   if (locale === 'en') {

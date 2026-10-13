@@ -596,3 +596,27 @@ test('the stash section stays last, right after 最近, through growth, re-rende
   assert.equal(doc.querySelectorAll('#codex-stash-v1-section').length, 1)
   uninstall({ window })
 })
+
+test('「不设时间」 stashes undated: no date text, no 到期, no reminder; 改日期 sets and clears', () => {
+  const { window } = page()
+  const notes = []
+  window.Notification = function (title, o) { notes.push(o.body) }
+  window.Notification.permission = 'granted'
+  install({ window, isMac: true, reminderIntervalMs: 0, log: { warn() {}, info() {} }, now: () => new Date(2030, 0, 1) })
+  pressStash(window)
+  const labels = [...window.document.querySelectorAll('#codex-stash-v1-popover [data-preset]')].map((e) => e.textContent)
+  assert.deepEqual(labels, ['明天', '3天后', '下周一', '不设时间'])
+  window.document.querySelector('[data-preset="none"]').click()
+  const row = () => window.document.querySelector('.codex-stash-v1-row')
+  assert.ok(row())
+  assert.equal(row().querySelector('.codex-stash-v1-date'), null)
+  assert.equal(row().querySelector('.codex-stash-v1-due'), null)
+  assert.equal(notes.length, 0)
+  row().querySelector('[data-codex-stash-action="change-date"]').click()
+  window.document.querySelector('[data-preset="tomorrow"]').click()
+  assert.ok(row().querySelector('.codex-stash-v1-date').textContent)
+  row().querySelector('[data-codex-stash-action="change-date"]').click()
+  window.document.querySelector('[data-preset="none"]').click()
+  assert.equal(row().querySelector('.codex-stash-v1-date'), null)
+  uninstall({ window })
+})
