@@ -1,0 +1,12 @@
+{
+  "name": "@codex-stash/adapter",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Codex Desktop DOM adapter: sidebar locators, thread identity, navigation, and fail-safe disable. No stash storage.",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

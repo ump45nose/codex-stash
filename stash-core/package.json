@@ -1,0 +1,13 @@
+{
+  "name": "@codex-stash/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Pure stash state for Codex threads. No DOM, no Codex config, no archive or pin APIs.",
+  "exports": {
+    ".": "./src/index.js",
+    "./file-storage": "./src/file-storage.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

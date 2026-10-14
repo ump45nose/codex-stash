@@ -1,0 +1,27 @@
+{
+  "name": "codex-stash",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Codex Desktop sidebar stash bin (收纳箱). Independent loader, adapter, and stash-core modules.",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "codex-stash": "./loader/bin/codex-stash.mjs"
+  },
+  "scripts": {
+    "test": "node --test stash-core/test/*.test.js codex-adapter/test/*.test.js ui/test/*.test.js loader/test/*.test.js",
+    "build": "node loader/scripts/build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10",
+    "jsdom": "^26.1.0"
+  },
+  "workspaces": [
+    "stash-core",
+    "codex-adapter",
+    "ui",
+    "loader"
+  ]
+}

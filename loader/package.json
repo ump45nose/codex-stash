@@ -1,0 +1,17 @@
+{
+  "name": "@codex-stash/loader",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Idempotent Codex Desktop injector for the stash section. CDP attach, install, and uninstall.",
+  "exports": {
+    ".": "./src/runtime.js",
+    "./cdp": "./src/cdp.js",
+    "./cli": "./src/cli.js"
+  },
+  "bin": {
+    "codex-stash": "./bin/codex-stash.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
