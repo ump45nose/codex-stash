@@ -74,11 +74,26 @@ test('live layout: the home button aria-current is not a thread; composer id is 
   assert.deepEqual(createAdapter(doc).readCurrentThread(), { raw: B, source: 'composer' })
 })
 
-test('live layout: active row attribute wins and the title attribute is used', async () => {
+test('live layout: the visible thread view wins over a lagging sidebar mark; mark is the fallback', async () => {
   const { doc, recents } = live()
   recents.querySelector('[data-app-action-sidebar-section-toggle]').click()
-  doc.querySelector('[data-app-action-sidebar-thread-row]').setAttribute('data-app-action-sidebar-thread-active', 'true')
+  const row = doc.querySelector('[data-app-action-sidebar-thread-row]')
+  row.setAttribute('data-app-action-sidebar-thread-active', 'true')
+  row.setAttribute('data-app-action-sidebar-thread-host-id', 'remote-ssh-discovered:box')
   const adapter = createAdapter(doc)
+  const portal = doc.querySelector('[data-above-composer-conversation-id]')
+  const shown = portal.getAttribute('data-above-composer-conversation-id')
+  // Visible composer shows another chat → it is the current one.
+  if (shown && !shown.endsWith(A)) {
+    const reading = adapter.readCurrentThread()
+    assert.equal(reading.source, 'composer')
+    assert.equal(reading.raw, shown.replace(/^local:/, ''))
+  }
+  // Visible composer agrees with the row → host comes from the row.
+  portal.setAttribute('data-above-composer-conversation-id', A)
+  assert.deepEqual(adapter.readCurrentThread(), { raw: A, source: 'composer', hostId: 'remote-ssh-discovered:box' })
+  // No visible thread view → the sidebar mark is the fallback.
+  portal.remove()
   assert.equal(adapter.readCurrentThread().raw, `local:${A}`)
   assert.equal(adapter.getThreadTitle(A), '查找 CPA')
 })

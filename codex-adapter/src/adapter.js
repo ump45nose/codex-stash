@@ -116,6 +116,9 @@ export function createAdapter(doc, options = {}) {
   }
 
   function currentHost() {
+    const reading = readCurrentThread()
+    if (reading.hostId) return reading.hostId
+    if (reading.source === 'composer') return null
     const row = currentRow()
     if (row) return rowHost(row)
     try {
@@ -219,6 +222,15 @@ export function createAdapter(doc, options = {}) {
     const sidebarRow = currentRow()
     const sidebarAttr = sidebarRow?.getAttribute(table.threadIdAttr) ?? null
     const hostId = sidebarRow ? rowHost(sidebarRow) : null
+    // The chat actually on screen wins: the visible composer's conversation
+    // id. The sidebar's active mark can lag (seen after host-scoped routes),
+    // so it is only a fallback when no visible thread view is found.
+    const shownId = domThreadKey(activePortal()?.getAttribute('data-above-composer-conversation-id') ?? '')
+    if (shownId) {
+      const sidebarKey = sidebarRow ? rowKey(sidebarRow) : null
+      const shownHost = sidebarKey === shownId ? hostId : hostFor(shownId)
+      return { raw: shownId, source: 'composer', ...(shownHost ? { hostId: shownHost } : {}) }
+    }
     if (sidebarAttr && domThreadKey(sidebarAttr)) return { raw: sidebarAttr, source: 'sidebar', ...(hostId ? { hostId } : {}) }
     // Pending client id on the row: prefer the resolved conversation id.
     const resolved = sidebarRow ? conversationIdFromProps(sidebarRow) : null
