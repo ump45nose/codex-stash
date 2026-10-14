@@ -218,3 +218,17 @@ Self-heal: the adapter polls (1.5 s) for a replaced sidebar node and rebinds
 its observer; the runtime remounts the section if it is gone (2 s); `watch`'s
 health check requires the section to be mounted in the sidebar, tries one
 render, and otherwise drops the guard so it re-injects.
+
+## Navigation without touching the sidebar (round 8, 2026-10-14)
+
+Codex's own UI navigates by posting a host message
+`{ type: 'navigate-to-route', path: '/local/<threadId>' }` on its window
+message bus (`dispatchHostMessage` / window `message` listener, which accepts
+same-window messages). `openThread()` now posts that message and waits until
+the open conversation (composer portal / active row) is the target. It never
+expands or collapses a section. Previously, for a row not rendered (section
+collapsed), it expanded 置顶 → 项目 → 最近 in turn to find and click the row and
+tried to collapse them again — visible expanding, and the re-collapse raced
+React re-renders, leaving sections open. Fallback now is only clicking a row
+that is already rendered. Verified live: all three sections stay collapsed
+during and after navigation (MutationObserver on aria-expanded saw no change).

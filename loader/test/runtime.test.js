@@ -82,7 +82,7 @@ test('dom thread keys and stash-core canonical ids agree', () => {
   }
 })
 
-test('install is idempotent, stashes by id, opens the row, and uninstalls cleanly', () => {
+test('install is idempotent, stashes by id, opens the row, and uninstalls cleanly', async () => {
   const { window, opened } = page()
   const warnings = []
   const first = install({
@@ -114,7 +114,8 @@ test('install is idempotent, stashes by id, opens the row, and uninstalls cleanl
   assert.equal(row.textContent.includes('reason'), false)
   assert.equal(row.querySelector('input'), null)
   row.querySelector('button').click()
-  assert.equal(opened(), 1)
+  await new Promise((r) => setTimeout(r, 0))
+  assert.equal(opened(), 0, 'already open: no row click, no section toggling')
   assert.equal(
     window.document.querySelector(`[data-app-action-sidebar-thread-id="local:${UUID}"]`).getAttribute('data-app-action-sidebar-thread-pinned'),
     'false',

@@ -113,7 +113,7 @@ test('route and portal are fallbacks and a draft id is still returned raw', () =
   assert.equal(domThreadKey(draft.readCurrentThread().raw), null)
 })
 
-test('openThread clicks the matching row and does not touch pin state', async () => {
+test('openThread: already-open is a no-op, rendered row is a fallback, pin state untouched', async () => {
   const document = dom()
   let opened = null
   let pinnedClicks = 0
@@ -125,14 +125,20 @@ test('openThread clicks the matching row and does not touch pin state', async ()
     pinnedClicks += 1
   })
   const adapter = createAdapter(document)
-  assert.deepEqual(await adapter.openThread(`local:${UUID}`), { ok: true })
-  assert.equal(opened, `local:${UUID}`)
+  // Already open → nothing to do. Another rendered row with no router → row click fallback.
+  assert.deepEqual(await adapter.openThread(`local:${UUID}`), { ok: true, via: 'already' })
+  assert.equal(opened, null)
+  const other = document.querySelector(`[data-app-action-sidebar-thread-id="local:${OTHER}"]`)
+  let otherOpened = 0
+  other?.addEventListener('click', () => (otherOpened += 1))
+  const res = await adapter.openThread(OTHER, { waitMs: 20, step: 10 })
+  assert.equal(res.ok, Boolean(other))
+  if (other) assert.equal(otherOpened, 1)
   assert.equal(pinnedClicks, 0)
   assert.equal(row.getAttribute('data-app-action-sidebar-thread-pinned'), 'false')
-  assert.deepEqual(await adapter.openThread(OTHER), { ok: true })
   assert.deepEqual(await adapter.openThread('99999999-9999-9999-9999-999999999999', { waitMs: 0 }), {
     ok: false,
-    reason: 'not-in-sidebar',
+    reason: 'not-navigated',
   })
 })
 

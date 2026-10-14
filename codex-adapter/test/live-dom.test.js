@@ -83,19 +83,30 @@ test('live layout: active row attribute wins and the title attribute is used', a
   assert.equal(adapter.getThreadTitle(A), '查找 CPA')
 })
 
-test('live layout: openThread expands a collapsed section, clicks, and restores collapse', async () => {
-  const { doc, recents, clicks } = live()
+test('live layout: openThread navigates via Codex route message and never touches section collapse', async () => {
+  const { doc, clicks } = live()
+  const win = doc.defaultView
+  const paths = []
+  // Stand-in for Codex's router: the message bus switches the open conversation.
+  win.addEventListener('message', (event) => {
+    if (event.data?.type !== 'navigate-to-route') return
+    paths.push(event.data.path)
+    const id = event.data.path.replace('/local/', '')
+    if (id !== '99999999-9999-9999-9999-999999999999') doc.querySelector('[data-above-composer-conversation-id]').setAttribute('data-above-composer-conversation-id', id)
+  })
+  const toggles = []
+  for (const t of doc.querySelectorAll('[data-app-action-sidebar-section-toggle]')) t.addEventListener('click', () => toggles.push(t))
+  const before = [...doc.querySelectorAll('[data-app-action-sidebar-section]')].map((s) => s.getAttribute('data-app-action-sidebar-section-collapsed'))
   const adapter = createAdapter(doc)
-  assert.equal(adapter.isThreadListed(A), false)
-  const result = await adapter.openThread(A, { waitMs: 100, step: 10 })
-  assert.equal(result.ok, true)
-  assert.deepEqual(clicks, [A])
-  assert.equal(recents.getAttribute('data-app-action-sidebar-section-collapsed'), 'true')
-  const miss = await adapter.openThread('99999999-9999-9999-9999-999999999999', { waitMs: 20, step: 10 })
-  assert.equal(miss.reason, 'not-in-sidebar')
-  for (const s of doc.querySelectorAll('[data-app-action-sidebar-section]')) {
-    assert.equal(s.getAttribute('data-app-action-sidebar-section-collapsed'), 'true')
-  }
+  assert.equal(adapter.isThreadListed(A), false, 'row not rendered: section collapsed')
+  const result = await adapter.openThread(A, { waitMs: 300, step: 10 })
+  assert.deepEqual(result, { ok: true, via: 'route' })
+  assert.deepEqual(paths, [`/local/${A}`])
+  assert.deepEqual(clicks, [])
+  const miss = await adapter.openThread('99999999-9999-9999-9999-999999999999', { waitMs: 50, step: 10 })
+  assert.equal(miss.ok, false)
+  assert.equal(toggles.length, 0, 'no section toggle clicked')
+  assert.deepEqual([...doc.querySelectorAll('[data-app-action-sidebar-section]')].map((s) => s.getAttribute('data-app-action-sidebar-section-collapsed')), before)
 })
 
 test('live layout: current title falls back to document.title for display only', () => {

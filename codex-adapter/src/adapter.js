@@ -623,7 +623,7 @@ export function createAdapter(doc, options = {}) {
       if (!via) {
         const previous = currentId()
         const previousTitle = opts.returnTitle ?? readCurrentTitle()
-        if (previous !== id && !(await openViaSearch(id, opts.title, step))) return { ok: false, reason: 'not-reachable' }
+        if (previous !== id && !(await openThread(id)).ok && !(await openViaSearch(id, opts.title, step))) return { ok: false, reason: 'not-reachable' }
         if (!(await pinOpenThreadViaHeader(step))) return { ok: false, reason: 'no-pin-control' }
         via = 'header'
         await waitFor(() => isPinned(id) === true, 600, step)
@@ -748,41 +748,30 @@ export function createAdapter(doc, options = {}) {
   }
 
   /**
-   * Click the native row for this id. Collapsed native sections do not render
-   * their rows, so when the row is absent each collapsed section is expanded
-   * in turn, searched, and collapsed again (the user's layout is restored).
+   * Navigate to a thread without touching the sidebar. Codex's own UI (fork,
+   * menus) navigates by posting a host message `{ type: 'navigate-to-route',
+   * path: '/local/<id>' }` to its window message bus; a same-origin
+   * window.postMessage is accepted by that bus. No section is expanded or
+   * collapsed. Fallback: click the row only when it is already rendered.
+   * @returns {Promise<{ ok: boolean, via?: string, reason?: string }>}
    */
-  async function openThread(threadId, { waitMs = 600, step = 50 } = {}) {
-    const direct = findRow(threadId)
+  async function openThread(threadId, { waitMs = 1500, step = 50 } = {}) {
+    const key = domThreadKey(threadId)
+    if (!key) return { ok: false, reason: 'invalid-id' }
+    if (currentId() === key) return { ok: true, via: 'already' }
+    const win = doc.defaultView
+    try {
+      win?.postMessage({ type: 'navigate-to-route', path: `/local/${key}` }, '*')
+    } catch {
+      /* opaque origin in tests */
+    }
+    if (await waitFor(() => currentId() === key, waitMs, step)) return { ok: true, via: 'route' }
+    const direct = findRow(key)
     if (direct) {
       direct.click()
-      return { ok: true }
+      return { ok: true, via: 'row' }
     }
-    if (!domThreadKey(threadId)) return { ok: false, reason: 'not-in-sidebar' }
-    const collapsedAttr = table.sectionCollapsedAttr
-    const collapsed = nativeSections().filter((section) => {
-      const toggle = section.querySelector(table.sectionToggle)
-      return (
-        toggle &&
-        (section.getAttribute(collapsedAttr) === 'true' ||
-          toggle.getAttribute('aria-expanded') === 'false')
-      )
-    })
-    for (const section of collapsed) {
-      const toggle = section.querySelector(table.sectionToggle)
-      toggle.click()
-      let row = null
-      for (let waited = 0; waited <= waitMs && !row; waited += step) {
-        row = findRow(threadId)
-        if (!row) await sleep(step)
-      }
-      if (row) row.click()
-      // Restore: re-query the toggle, React may have re-rendered it.
-      const again = section.isConnected ? section.querySelector(table.sectionToggle) : null
-      if (again && again.getAttribute('aria-expanded') === 'true') again.click()
-      if (row) return { ok: true, expanded: sectionKey(section) || true }
-    }
-    return { ok: false, reason: 'not-in-sidebar' }
+    return { ok: false, reason: 'not-navigated' }
   }
 
   function sleep(ms) {
