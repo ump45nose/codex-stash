@@ -197,3 +197,22 @@ test('an empty sidebar is loading, and a non-shell document is no-window', () =>
   assert.equal(createAdapter(loading).probe().status, 'loading')
   assert.equal(createAdapter(dom('<!doctype html><body><p>avatar</p></body></html>')).probe().status, 'no-window')
 })
+
+test('openThread routes a remote-host (SSH) thread with its hostId so it never opens as local', async () => {
+  const document = dom()
+  const other = document.querySelector(`[data-app-action-sidebar-thread-id="local:${OTHER}"]`)
+  if (other) other.setAttribute('data-app-action-sidebar-thread-host-id', 'remote-ssh-discovered:box')
+  const adapter = createAdapter(document)
+  const posted = []
+  document.defaultView.postMessage = (data) => posted.push(data)
+  assert.equal(adapter.routeFor(OTHER, 'remote-ssh-discovered:box'), `/local/${OTHER}?hostId=remote-ssh-discovered%3Abox`)
+  assert.equal(adapter.routeFor(OTHER, 'local'), `/local/${OTHER}`)
+  await adapter.openThread(OTHER, { waitMs: 0, hostId: 'remote-ssh-discovered:box' })
+  assert.deepEqual(posted[0], { type: 'navigate-to-route', path: `/local/${OTHER}?hostId=remote-ssh-discovered%3Abox` })
+  if (other) {
+    assert.equal(adapter.hostFor(OTHER), 'remote-ssh-discovered:box')
+    posted.length = 0
+    await adapter.openThread(OTHER, { waitMs: 0 })
+    assert.match(posted[0].path, /hostId=remote-ssh-discovered%3Abox$/)
+  }
+})

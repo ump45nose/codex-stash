@@ -149,3 +149,23 @@ test('undated entries: null dueAt, never due, sorted after dated, date can be se
   assert.equal(legacy.dropped, 0)
   assert.equal(legacy.state.items[B].dueAt, null)
 })
+
+test('remote-host identity: stored, survives storage and re-stash, migrates old entries, same key for matching', () => {
+  const storage = createMemoryStorage()
+  const store = createStashStore(storage)
+  const HOST = 'remote-ssh-discovered:yuwk-201'
+  const row = store.stash(`local:${UUID}`, 'remote task', null, now, { hostId: HOST })
+  assert.equal(row.threadId, UUID)
+  assert.equal(row.hostId, HOST)
+  // re-stash without a host keeps the known host
+  assert.equal(store.stash(UUID, 'remote task', null, now).hostId, HOST)
+  assert.equal(createStashStore(storage).get(UUID).hostId, HOST)
+  // an old (pre-host) entry loads without a host and is corrected later
+  store.stash(OTHER, 'old', null, now)
+  assert.equal(store.get(OTHER).hostId, undefined)
+  assert.equal(store.setHost(OTHER, HOST, now), true)
+  assert.equal(store.setHost(OTHER, HOST, now), false)
+  // the current thread read in any form (local:<id> or bare) removes the entry
+  assert.equal(store.take(`local:${UUID}`, now).hostId, HOST)
+  assert.equal(store.get(UUID), null)
+})

@@ -50,7 +50,7 @@ export function parseState(raw) {
       dropped += 1
       continue
     }
-    state.items[threadId] = { title: item.title, dueAt, stashedAt, ...parsePin(item.pin) }
+    state.items[threadId] = { title: item.title, dueAt, stashedAt, ...parsePin(item.pin), ...parseHost(item.hostId) }
   }
   return { state, dropped }
 }
@@ -93,4 +93,18 @@ export function parsePin(raw) {
     }
   }
   return { pin: { wasPinned: true, index, beforeThreadId } }
+}
+
+/**
+ * Codex host the thread lives on. Threads on a remote host (SSH) share the
+ * `local:<id>` scheme with local ones and differ only by host; omitted = not
+ * known yet (pre-0.x entries) — the runtime re-resolves it from the sidebar.
+ * @param {unknown} raw
+ * @returns {{ hostId?: string }}
+ */
+export function parseHost(raw) {
+  if (typeof raw !== 'string') return {}
+  const value = raw.trim()
+  if (!value || value.length > 200 || !/^[A-Za-z0-9:._~@\/-]+$/.test(value)) return {}
+  return { hostId: value }
 }

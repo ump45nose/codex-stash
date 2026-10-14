@@ -153,7 +153,7 @@ export function install(options = {}) {
     const reading = adapter.readCurrentThread()
     if (!reading?.raw) return { ok: false, reason: 'missing', raw: null }
     try {
-      return { ok: true, reason: null, id: canonicalThreadId(reading.raw), raw: reading.raw }
+      return { ok: true, reason: null, id: canonicalThreadId(reading.raw), raw: reading.raw, hostId: reading.hostId ?? null }
     } catch (error) {
       return { ok: false, reason: error.code || 'invalid', raw: reading.raw }
     }
@@ -163,12 +163,18 @@ export function install(options = {}) {
     return sortRows(store.list(now), sortMode, now).map((item) => {
       const live = adapter.getThreadTitle(item.threadId)
       if (live && live !== item.title) store.refreshTitle(item.threadId, live, now)
+      // Migration: entries saved before host tracking (or saved as local by
+      // the old bug) are corrected from the live sidebar row.
+      const host = adapter.hostFor?.(item.threadId)
+      if (host && host !== item.hostId) store.setHost(item.threadId, host, now)
       return {
         threadId: item.threadId,
         title: live || item.title || strings.untitled,
         dueLabel: formatDueLabel(item.dueAt, now, locale),
         due: Boolean(item.dueAt) && Date.parse(item.dueAt) <= now.getTime(),
         missing: !adapter.isThreadListed(item.threadId),
+        hostId: host || item.hostId || null,
+        remote: Boolean((host || item.hostId) && (host || item.hostId) !== 'local'),
       }
     })
   }
@@ -230,7 +236,7 @@ export function install(options = {}) {
       onOpen(threadId) {
         const row = rows.find((candidate) => candidate.threadId === threadId)
         if (!row) return
-        Promise.resolve(adapter.openThread(threadId)).then((result) => {
+        Promise.resolve(adapter.openThread(threadId, { hostId: store.get(threadId)?.hostId ?? null })).then((result) => {
           if (!result?.ok) log?.info?.('[codex-stash] thread not found in sidebar', threadId)
         })
       },
@@ -276,7 +282,11 @@ export function install(options = {}) {
         currentTitle ||
         store.get(threadId)?.title ||
         strings.untitled
-      store.stash(threadId, title, dueAt, now)
+      const hostId =
+        adapter.hostFor?.(threadId) ||
+        (currentThread().id === threadId ? currentThread().hostId : null) ||
+        null
+      store.stash(threadId, title, dueAt, now, { hostId })
       unpinAfterStash(threadId)
     }
     persistMirror()
@@ -338,6 +348,7 @@ export function install(options = {}) {
         title: adapter.getThreadTitle(row.threadId) || row.title,
         index: row.pin.index,
         beforeThreadId: row.pin.beforeThreadId,
+        hostId: row.hostId ?? null,
       }),
     )
       .then((result) => {

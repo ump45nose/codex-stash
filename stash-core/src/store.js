@@ -1,10 +1,10 @@
 import { canonicalThreadId } from './thread-id.js'
 import { isDue, normalizeOptionalDueAt } from './dates.js'
-import { emptyState, parsePin, parseState } from './state.js'
+import { emptyState, parseHost, parsePin, parseState } from './state.js'
 
 /**
  * @typedef {{ wasPinned: true, index: number | null, beforeThreadId: string | null }} PinMemory
- * @typedef {{ title: string, dueAt: string | null, stashedAt: string, pin?: PinMemory }} StashItem
+ * @typedef {{ title: string, dueAt: string | null, stashedAt: string, pin?: PinMemory, hostId?: string }} StashItem
  * @typedef {{ threadId: string } & StashItem} StashRow
  */
 
@@ -30,6 +30,7 @@ export function createStashStore(storage) {
       dueAt: item.dueAt,
       stashedAt: item.stashedAt,
       ...(item.pin ? { pin: { ...item.pin } } : {}),
+      ...(item.hostId ? { hostId: item.hostId } : {}),
     }
   }
 
@@ -39,8 +40,9 @@ export function createStashStore(storage) {
      * @param {string} title display cache only
      * @param {string | Date | null} dueDate null = undated (不设时间)
      * @param {Date} [now]
+     * @param {{ hostId?: string | null }} [identity] Codex host (local / remote-ssh-…)
      */
-    stash(threadId, title, dueDate, now = new Date()) {
+    stash(threadId, title, dueDate, now = new Date(), identity = {}) {
       const id = canonicalThreadId(threadId)
       if (typeof title !== 'string') throw new TypeError('title must be a string')
       const dueAt = normalizeOptionalDueAt(dueDate)
@@ -50,6 +52,7 @@ export function createStashStore(storage) {
         dueAt,
         stashedAt: previous?.stashedAt ?? now.toISOString(),
         ...(previous?.pin ? { pin: previous.pin } : {}),
+        ...(parseHost(identity?.hostId).hostId ? parseHost(identity.hostId) : previous?.hostId ? { hostId: previous.hostId } : {}),
       }
       persist(now)
       return copy(id, state.items[id])
@@ -83,6 +86,22 @@ export function createStashStore(storage) {
       const parsed = pin ? parsePin({ wasPinned: true, ...pin }).pin : undefined
       if (parsed) item.pin = parsed
       else delete item.pin
+      persist(now)
+      return true
+    },
+
+    /**
+     * Record / correct the host of an entry (migration of old entries).
+     * @param {string} threadId
+     * @param {string} hostId
+     * @param {Date} [now]
+     */
+    setHost(threadId, hostId, now = new Date()) {
+      const id = canonicalThreadId(threadId)
+      const item = state.items[id]
+      const parsed = parseHost(hostId).hostId
+      if (!item || !parsed || item.hostId === parsed) return false
+      item.hostId = parsed
       persist(now)
       return true
     },

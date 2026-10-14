@@ -1,6 +1,6 @@
 import { ensureStyle } from './style.js'
 import { NODE_PREFIX } from './strings.js'
-import { DATE_ICON, UNSTASH_ICON } from './icons.js'
+import { DATE_ICON, UNSTASH_ICON, REMOTE_ICON } from './icons.js'
 import { attachTooltip } from './tooltip.js'
 
 const DOTS =
@@ -23,7 +23,7 @@ const DOTS =
  *   prefix?: string,
  *   strings: Record<string, string>,
  *   collapsed: boolean,
- *   rows: Array<{ threadId: string, title: string, dueLabel: string, due: boolean, missing: boolean }>,
+ *   rows: Array<{ threadId: string, title: string, dueLabel: string, due: boolean, missing: boolean, remote?: boolean, hostId?: string | null }>,
  *   onToggle: () => void,
  *   onOpen: (threadId: string) => void,
  *   onContext: (threadId: string, x: number, y: number, anchor?: DOMRect) => void,
@@ -208,6 +208,15 @@ function renderRow(doc, section, row, chrome, strings, options = {}, prefix = NO
   date.textContent = row.dueLabel
   // Undated (不设时间): nothing on the right, like a native row with no meta.
   wrap.append(button)
+  if (row.remote) {
+    // Same marker Codex puts on rows that live on a remote (SSH) host.
+    const mark = doc.createElement('span')
+    mark.className = 'codex-stash-v1-remote'
+    mark.setAttribute('data-codex-stash-host', row.hostId || '')
+    mark.title = row.hostId || ''
+    mark.innerHTML = REMOTE_ICON
+    wrap.append(mark)
+  }
   if (row.dueLabel) wrap.append(date)
   if (row.due) {
     const due = doc.createElement('span')

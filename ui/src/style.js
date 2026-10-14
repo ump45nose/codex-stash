@@ -16,6 +16,7 @@ export function ensureStyle(doc, prefix = NODE_PREFIX) {
     :where(#${prefix}section .codex-stash-v1-row) { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: var(--height-token-row, 28px); padding-inline: var(--padding-row-x, 8px); border-radius: 8px; cursor: pointer; position: relative; }
     :where(#${prefix}section .codex-stash-v1-row:hover) { background: var(--color-background-primary-ghost-hover, rgba(0, 0, 0, 0.04)); }
     #${prefix}section .codex-stash-v1-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; background: transparent; color: inherit; font: inherit; border: 0; padding: 0; cursor: inherit; }
+    #${prefix}section .codex-stash-v1-remote { flex: none; display: inline-flex; align-items: center; margin-inline: 4px; color: rgb(4, 184, 76); }
     #${prefix}section .codex-stash-v1-date { flex: none; opacity: 0.6; font-size: 0.85em; transition: opacity 120ms; }
     #${prefix}section .codex-stash-v1-due { flex: none; font-size: 0.8em; color: var(--color-text-warning, #e25507); }
     #${prefix}section .codex-stash-v1-row-actions { position: absolute; inset-inline-end: 0; top: 0; z-index: 10; height: 100%; display: flex; align-items: center; justify-content: flex-end; gap: calc(var(--spacing, 4px) * 2); padding-inline-end: calc(var(--spacing, 4px) * 1.5); margin-inline-end: calc(var(--spacing, 4px) * 0.5); opacity: 0; pointer-events: none; }

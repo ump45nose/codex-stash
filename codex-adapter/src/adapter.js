@@ -92,6 +92,45 @@ export function createAdapter(doc, options = {}) {
     return null
   }
 
+  const HOST_ATTR = 'data-app-action-sidebar-thread-host-id'
+
+  /**
+   * Codex host of a row: `local`, or e.g. `remote-ssh-discovered:<host>` for
+   * threads on a remote machine. Those rows use the same `local:<id>` id
+   * scheme, so the host is part of the thread's identity for navigation.
+   */
+  function rowHost(row) {
+    const attr = row?.getAttribute?.(HOST_ATTR)?.trim()
+    if (attr) return attr
+    const fiberKey = row && Object.keys(row).find((k) => k.startsWith('__reactFiber'))
+    let fiber = fiberKey ? row[fiberKey] : null
+    for (let depth = 0; fiber && depth < 25; depth++, fiber = fiber.return) {
+      const value = fiber.memoizedProps?.hostId
+      if (typeof value === 'string' && value) return value
+    }
+    return null
+  }
+
+  function hostFor(threadId) {
+    return rowHost(findRow(threadId))
+  }
+
+  function currentHost() {
+    const row = currentRow()
+    if (row) return rowHost(row)
+    try {
+      return new URL(doc.defaultView?.location?.href ?? '').searchParams.get('hostId') || null
+    } catch {
+      return null
+    }
+  }
+
+  /** navigate-to-route path for a typed identity (same form Codex's own search uses). */
+  function routeFor(key, hostId) {
+    const path = `/local/${key}`
+    return hostId && hostId !== 'local' ? `${path}?hostId=${encodeURIComponent(hostId)}` : path
+  }
+
   function findRow(threadId) {
     const key = domThreadKey(threadId)
     if (!key) return null
@@ -179,10 +218,11 @@ export function createAdapter(doc, options = {}) {
   function readCurrentThread() {
     const sidebarRow = currentRow()
     const sidebarAttr = sidebarRow?.getAttribute(table.threadIdAttr) ?? null
-    if (sidebarAttr && domThreadKey(sidebarAttr)) return { raw: sidebarAttr, source: 'sidebar' }
+    const hostId = sidebarRow ? rowHost(sidebarRow) : null
+    if (sidebarAttr && domThreadKey(sidebarAttr)) return { raw: sidebarAttr, source: 'sidebar', ...(hostId ? { hostId } : {}) }
     // Pending client id on the row: prefer the resolved conversation id.
     const resolved = sidebarRow ? conversationIdFromProps(sidebarRow) : null
-    if (resolved) return { raw: resolved, source: 'sidebar-props' }
+    if (resolved) return { raw: resolved, source: 'sidebar-props', ...(hostId ? { hostId } : {}) }
     const portal = activePortal()
     const portalId = portal?.getAttribute('data-above-composer-conversation-id')
     if (portalId) return { raw: portalId, source: 'composer' }
@@ -623,12 +663,13 @@ export function createAdapter(doc, options = {}) {
       if (!via) {
         const previous = currentId()
         const previousTitle = opts.returnTitle ?? readCurrentTitle()
-        if (previous !== id && !(await openThread(id)).ok && !(await openViaSearch(id, opts.title, step))) return { ok: false, reason: 'not-reachable' }
+        const previousHost = currentHost()
+        if (previous !== id && !(await openThread(id, { hostId: opts.hostId })).ok && !(await openViaSearch(id, opts.title, step))) return { ok: false, reason: 'not-reachable' }
         if (!(await pinOpenThreadViaHeader(step))) return { ok: false, reason: 'no-pin-control' }
         via = 'header'
         await waitFor(() => isPinned(id) === true, 600, step)
         if (previous && previous !== id) {
-          const back = await openThread(previous)
+          const back = await openThread(previous, { hostId: previousHost })
           if (!back?.ok) await openViaSearch(previous, previousTitle, step)
         }
       }
@@ -755,17 +796,20 @@ export function createAdapter(doc, options = {}) {
    * collapsed. Fallback: click the row only when it is already rendered.
    * @returns {Promise<{ ok: boolean, via?: string, reason?: string }>}
    */
-  async function openThread(threadId, { waitMs = 1500, step = 50 } = {}) {
+  async function openThread(threadId, { waitMs = 1500, step = 50, hostId = null } = {}) {
     const key = domThreadKey(threadId)
     if (!key) return { ok: false, reason: 'invalid-id' }
-    if (currentId() === key) return { ok: true, via: 'already' }
+    // Without the host a remote (SSH) thread opens as a local thread.
+    const host = hostId || hostFor(key)
+    const sameHost = () => !host || (currentHost() ?? 'local') === host
+    if (currentId() === key && sameHost()) return { ok: true, via: 'already' }
     const win = doc.defaultView
     try {
-      win?.postMessage({ type: 'navigate-to-route', path: `/local/${key}` }, '*')
+      win?.postMessage({ type: 'navigate-to-route', path: routeFor(key, host) }, '*')
     } catch {
       /* opaque origin in tests */
     }
-    if (await waitFor(() => currentId() === key, waitMs, step)) return { ok: true, via: 'route' }
+    if (await waitFor(() => currentId() === key && sameHost(), waitMs, step)) return { ok: true, via: 'route' }
     const direct = findRow(key)
     if (direct) {
       direct.click()
@@ -887,6 +931,9 @@ export function createAdapter(doc, options = {}) {
       const row = findRow(threadId)
       return row ? rowTitle(row) : null
     },
+    hostFor,
+    currentHost,
+    routeFor,
     isThreadListed(threadId) {
       return Boolean(findRow(threadId))
     },
